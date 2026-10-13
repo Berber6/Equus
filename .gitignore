@@ -1,0 +1,12 @@
+/bin/
+/config.yaml
+
+# Go test and coverage artifacts
+*.test
+coverage.out
+
+# Local runtime data
+*.log
+
+# Local OS metadata
+.DS_Store

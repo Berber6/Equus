@@ -1,0 +1,24 @@
+# Equus example configuration.
+#
+# Copy this file to <equus-home>/config.yaml (default: ~/.equus/config.yaml)
+# and adjust it, or export EQUUS_HOME to point at a custom directory.
+#
+# All Provider entries are user-defined. Keep credentials out of this file
+# and inject the selected Provider key with EQUUS_API_KEY when possible.
+# EQUUS_MODEL_PROVIDER selects an alias from model_providers, while
+# EQUUS_MODEL selects the model independently of its transport configuration.
+
+model: GLM-5.3
+model_provider: openai
+
+model_providers:
+  openai:
+    wire_api: chat_completions
+    api_key: ${EQUUS_API_KEY}
+    # Any OpenAI Chat Completions compatible endpoint works.
+    base_url: https://llmapi.isrc.ac.cn/v1
+    timeout: 120s
+
+logging:
+  level: info
+  trace_llm: false
