@@ -81,8 +81,8 @@ func EnsureHome() error {
 		return nil
 	}
 	starter := fmt.Sprintf(`# Equus starter configuration written on first run.
-# Keep credentials out of this file when possible and inject the key via
-# EQUUS_API_KEY instead.
+# Keep credentials out of this file when possible: inject the key via
+# EQUUS_API_KEY, or point api_key_file at a key file under this directory.
 
 model: GLM-5.3
 model_provider: openai
@@ -91,6 +91,8 @@ model_providers:
   openai:
     wire_api: chat_completions
     api_key: ${%s}
+    # Alternatively, read the key from a file:
+    # api_key_file: api_key.txt
     base_url: http://127.0.0.1:3456/v1
     timeout: 120s
 `, config.EnvAPIKey)

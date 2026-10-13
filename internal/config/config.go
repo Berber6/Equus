@@ -28,12 +28,15 @@ type Config struct {
 	Logging        LoggingConfig                `yaml:"logging"`
 }
 
-// ModelProviderInfo describes one model provider transport.
+// ModelProviderInfo describes one model provider transport. The API key can
+// be given inline (api_key), or loaded from a file (api_key_file) whose
+// content is trimmed; api_key takes precedence when both are set.
 type ModelProviderInfo struct {
-	WireAPI WireAPI       `yaml:"wire_api"`
-	APIKey  string        `yaml:"api_key"`
-	BaseURL string        `yaml:"base_url"`
-	Timeout time.Duration `yaml:"timeout"`
+	WireAPI    WireAPI       `yaml:"wire_api"`
+	APIKey     string        `yaml:"api_key"`
+	APIKeyFile string        `yaml:"api_key_file"`
+	BaseURL    string        `yaml:"base_url"`
+	Timeout    time.Duration `yaml:"timeout"`
 }
 
 // LoggingConfig controls runtime logging behavior.

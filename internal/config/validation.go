@@ -19,8 +19,10 @@ func Validate(configured Config) error {
 	if err != nil {
 		problems = append(problems, err.Error())
 	} else {
+		// The loader resolves api_key_file into APIKey before validation,
+		// so an empty APIKey here means no key source was configured.
 		if strings.TrimSpace(provider.APIKey) == "" {
-			problems = append(problems, fmt.Sprintf("provider %q api_key is empty", name))
+			problems = append(problems, fmt.Sprintf("provider %q api_key is empty (set api_key or api_key_file)", name))
 		}
 		if strings.TrimSpace(provider.BaseURL) == "" {
 			problems = append(problems, fmt.Sprintf("provider %q base_url is empty", name))

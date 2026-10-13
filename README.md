@@ -21,6 +21,7 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 - 多轮对话记忆。
 - 内置文件工具：`read_file`、`write_file`、`list_files`（限制在工作目录内）。
 - YAML 配置 + 环境变量覆盖（`${VAR}` 展开与 `EQUUS_*` 变量）。
+- API Key 支持三种注入方式：配置文件内联 / 密钥文件（`api_key_file`）/ 环境变量。
 
 ## 设计来源
 
@@ -30,7 +31,7 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 - **Provider 中立模型域**：`Request`/`Response`/`ResponseItem`/`ToolCall`/`Client`/`Stream` 等中立类型，模型选择与传输配置解耦（`model_providers` + `wire_api` 抽象）。
 - **Agent 主循环**：采样 → 解析工具调用 → 执行 → 工具结果回填 → 继续采样直到 `finish_reason=stop`；流式优先、失败自动回退非流式。
 - **Chat Completions SSE 流式**：逐分片解析，包括跨分片的 tool call 参数拼接与 usage 汇总。
-- **配置体系**：YAML + `${VAR}` 环境引用展开 + `EQUUS_*` 环境变量覆盖 + 校验与密钥脱敏。
+- **配置体系**：YAML + `${VAR}` 环境引用展开 + `EQUUS_*` 环境变量覆盖 + 校验与密钥脱敏；密钥可内联、走密钥文件（`api_key_file`）或环境变量。
 
 ### 参照了 Claude Code
 
@@ -75,10 +76,42 @@ mkdir -p ~/.equus
 cp configs/config.yaml.example ~/.equus/config.yaml
 ```
 
-通过环境变量注入密钥（推荐）：
+#### API Key 的三种注入方式
+
+**方式一：密钥文件（推荐）** —— 密钥单独存放，配置文件里不出现明文：
+
+```bash
+echo "sk-..." > ~/.equus/api_key.txt
+chmod 600 ~/.equus/api_key.txt
+```
+
+```yaml
+model_providers:
+  openai:
+    wire_api: chat_completions
+    api_key_file: api_key.txt   # 相对路径基于 ~/.equus/，也可用绝对路径
+    base_url: https://llmapi.isrc.ac.cn/v1
+```
+
+**方式二：环境变量** —— 适合临时切换或 CI 环境：
 
 ```bash
 export EQUUS_API_KEY="sk-..."
+```
+
+**方式三：配置文件内联**（配合 `${VAR}` 展开可避免明文落盘）：
+
+```yaml
+model_providers:
+  openai:
+    api_key: ${EQUUS_API_KEY}   # 或直接写明文（不推荐）
+```
+
+优先级：**环境变量 > 配置文件内联 > 密钥文件**。文件内容会自动去除首尾空白（换行符安全）。
+
+其他常用环境变量：
+
+```bash
 export EQUUS_BASE_URL="https://llmapi.isrc.ac.cn/v1"
 export EQUUS_MODEL="GLM-5.3"
 ```

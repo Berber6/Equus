@@ -56,7 +56,31 @@ func (loader Loader) Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("decode config %q: %w", loader.path, err)
 	}
-	return applyEnvironmentOverrides(patched)
+	overridden, err := applyEnvironmentOverrides(patched)
+	if err != nil {
+		return Config{}, err
+	}
+	return loader.resolveAPIKeys(overridden)
+}
+
+// resolveAPIKeys reads provider keys from api_key_file entries whose inline
+// api_key is empty, yielding a Config where APIKey is directly usable.
+func (loader Loader) resolveAPIKeys(configured Config) (Config, error) {
+	equusRoot := ""
+	if loader.path != "" {
+		equusRoot = filepath.Dir(loader.path)
+	}
+	resolved := configured
+	resolved.ModelProviders = make(map[string]ModelProviderInfo, len(configured.ModelProviders))
+	for name, provider := range configured.ModelProviders {
+		key, err := ResolveAPIKey(provider, equusRoot)
+		if err != nil {
+			return Config{}, fmt.Errorf("provider %q: %w", name, err)
+		}
+		provider.APIKey = key
+		resolved.ModelProviders[name] = provider
+	}
+	return resolved, nil
 }
 
 // applyEnvironmentOverrides injects environment variables above the values

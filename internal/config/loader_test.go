@@ -102,3 +102,80 @@ func TestEnvAPIKeyOverride(t *testing.T) {
 		t.Fatalf("api key = %q", provider.APIKey)
 	}
 }
+
+func TestLoadReadsAPIKeyFromFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "api_key.txt"), []byte("  sk-from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, ConfigFileName)
+	content := `
+model: glm-5.3
+model_providers:
+  openai:
+    wire_api: chat_completions
+    api_key_file: api_key.txt
+    base_url: http://localhost:9/v1
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := NewFileLoader(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, _, err := configured.ResolveProvider()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.APIKey != "sk-from-file" {
+		t.Fatalf("api key = %q", provider.APIKey)
+	}
+}
+
+func TestLoadAPIKeyFileMissingFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ConfigFileName)
+	content := `
+model: glm-5.3
+model_providers:
+  openai:
+    api_key_file: nope.txt
+    base_url: http://localhost:9/v1
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewFileLoader(path).Load(); err == nil {
+		t.Fatal("expected error for missing api_key_file")
+	}
+}
+
+func TestInlineAPIKeyTakesPrecedenceOverFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "api_key.txt"), []byte("sk-from-file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, ConfigFileName)
+	content := `
+model: glm-5.3
+model_providers:
+  openai:
+    api_key: sk-inline
+    api_key_file: api_key.txt
+    base_url: http://localhost:9/v1
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := NewFileLoader(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, _, err := configured.ResolveProvider()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.APIKey != "sk-inline" {
+		t.Fatalf("api key = %q", provider.APIKey)
+	}
+}

@@ -15,6 +15,9 @@ model_providers:
   openai:
     wire_api: chat_completions
     api_key: ${EQUUS_API_KEY}
+    # Alternatively, read the key from a file (relative paths resolve
+    # against the Equus home directory, i.e. ~/.equus/):
+    # api_key_file: api_key.txt
     # Any OpenAI Chat Completions compatible endpoint works.
     base_url: https://llmapi.isrc.ac.cn/v1
     timeout: 120s
