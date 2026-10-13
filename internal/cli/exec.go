@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/Godric-W/Equus/internal/agent"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +24,7 @@ func newExecCommand(stdout, stderr io.Writer) *cobra.Command {
 }
 
 func runExec(ctx context.Context, prompt string, stdout, stderr io.Writer) error {
-	session, err := buildSession()
+	session, _, _, err := buildSession()
 	if err != nil {
 		return err
 	}
@@ -39,4 +40,28 @@ func runExec(ctx context.Context, prompt string, stdout, stderr io.Writer) error
 		fmt.Fprintf(stderr, "warning: turn ended early: %v\n", err)
 	}
 	return nil
+}
+
+// chatEventSink renders streaming session events to the terminal for the
+// non-interactive exec command.
+func chatEventSink(stdout io.Writer) func(agent.Event) {
+	var reasoningShown bool
+	return func(event agent.Event) {
+		switch event.Kind {
+		case agent.EventReasoningDelta:
+			if !reasoningShown {
+				fmt.Fprintln(stdout, "\x1b[2m[thinking]\x1b[0m")
+				reasoningShown = true
+			}
+			fmt.Fprint(stdout, event.Text)
+		case agent.EventToolCall:
+			fmt.Fprintf(stdout, "\x1b[36m[tool] %s(%s)\x1b[0m\n", event.Tool, event.Text)
+		case agent.EventToolResult:
+			fmt.Fprintf(stdout, "\x1b[36m[tool-result] %s: %s\x1b[0m\n", event.Tool, event.Text)
+		case agent.EventUsage:
+			if event.Usage != nil {
+				fmt.Fprintf(stdout, "\x1b[2m[tokens] in=%d out=%d\x1b[0m\n", event.Usage.InputTokens, event.Usage.OutputTokens)
+			}
+		}
+	}
 }

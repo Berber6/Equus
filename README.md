@@ -1,6 +1,6 @@
 # Equus
 
-Equus 是一个主要仿照 Codex（OpenAI 终端 Coding Agent）架构搭建的极简终端 Coding Agent，使用 Go 编写。目前实现了「配置加载 → LLM 客户端 → Agent 循环 → 工具执行 → CLI」这条主链，其他高级能力（TUI、会话持久化、MCP、Skill、审批等）还在实现过程中。文件工具部分参照了 Claude Code。
+Equus 是一个主要仿照 Codex（OpenAI 终端 Coding Agent）架构搭建的极简终端 Coding Agent，使用 Go 编写。目前实现了「配置加载 → LLM 客户端 → Agent 循环 → 工具执行 → CLI」这条主链，交互模式为仿 Amadeus 的 Bubble Tea TUI；其他高级能力（会话持久化、MCP、Skill、审批等）还在实现过程中。文件工具部分参照了 Claude Code，TUI 部分参照了 Amadeus。
 
 Equus（马属）—— 一匹小马。
 
@@ -10,7 +10,7 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 
 - **Rust**：性能和内存安全无可挑剔，但所有权、生命周期这套编译期约束学习成本高，改一处代码常常要连锁改十处，不适合快速迭代一个还在成长中的框架。
 - **TypeScript**：生态最丰富、上手最快，但产物依赖 Node 运行时，发给别人不是「一个文件」；调试 agent 主循环时层层异步回调的调用栈也不够直观。
-- **Go**：`go build` 直接产出一个静态链接的单文件二进制，拷到任意 Linux 机器就能跑；并发就是一个 `go` 关键字；标准库自带 HTTP/JSON，本项目核心依赖只有 2 个；类型系统「够用就好」，代码读起来接近直白的英文，重构很快。
+- **Go**：`go build` 直接产出一个静态链接的单文件二进制，拷到任意 Linux 机器就能跑；并发就是一个 `go` 关键字；标准库自带 HTTP/JSON，核心依赖精简（LLM 域仅 cobra + yaml，TUI 引入 charmbracelet 系列）；类型系统「够用就好」，代码读起来接近直白的英文，重构很快。
 
 一句话：在「够快的性能」和「够快的开发速度」之间取中庸，Go 最省心。
 
@@ -22,6 +22,7 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 - 内置文件工具：`read_file`、`write_file`、`list_files`（限制在工作目录内）。
 - YAML 配置 + 环境变量覆盖（`${VAR}` 展开与 `EQUUS_*` 变量）。
 - API Key 支持三种注入方式：配置文件内联 / 密钥文件（`api_key_file`）/ 环境变量。
+- 交互式 TUI（Bubble Tea）：全屏对话、行编辑输入框、历史召回、滚动 transcript、实时状态。
 
 ## 设计来源
 
@@ -40,7 +41,11 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 
 ### 待实现的能力
 
-TUI、会话持久化（thread/rollout）、MCP、Skill、审批（approval）、compaction、multi-agent、web fetch/search 等还在实现过程中。
+会话持久化（thread/rollout）、MCP、Skill、审批（approval）、compaction、multi-agent、web fetch/search 等还在实现过程中。
+
+### 参照了 Amadeus
+
+- **TUI**：`internal/tui` 仿照 Amadeus 的 Bubble Tea 界面（`bubbles/textarea` 输入、`bubbles/viewport` 滚动、`lipgloss` 配色），裁剪掉 Equus 尚无对应能力的部分（markdown 渲染、审批对话框、slash command、session 选择器、MCP、multi-agent 等）。命名统一替换为 Equus。
 
 ## 目录结构
 
@@ -52,6 +57,7 @@ Equus/
 │   ├── cli/                 # Cobra 命令：chat / exec / config / version
 │   ├── config/              # YAML 加载、env 展开、校验、脱敏
 │   ├── agent/               # Agent 循环与内置工具
+│   ├── tui/                 # Bubble Tea 交互界面（仿 Amadeus）
 │   └── llm/                 # Provider 中立模型域
 │       └── openai/          # Chat Completions 适配器（非流式 + SSE 流式）
 ├── Makefile
@@ -107,7 +113,11 @@ model_providers:
     api_key: ${EQUUS_API_KEY}   # 或直接写明文（不推荐）
 ```
 
-优先级：**环境变量 > 配置文件内联 > 密钥文件**。文件内容会自动去除首尾空白（换行符安全）。
+优先级：**环境变量 > 配置文件内联（`api_key`）> 密钥文件（`api_key_file`）**。文件内容会自动去除首尾空白（换行符安全）。
+
+> **注意：`api_key` 与 `api_key_file` 可以同时存在，但 `api_key` 优先。**
+> 只要 `api_key` 非空，就会直接使用它并**忽略 `api_key_file`**（文件甚至不会被读取，不存在也不报错）。
+> 常见误配：想用密钥文件却在 `api_key` 里写了**文件路径**（如 `api_key: api_key.txt`）——这会把路径字符串当成密钥发出去，导致 `401 Invalid token`。二者选其一即可；用密钥文件时请只写 `api_key_file`。
 
 其他常用环境变量：
 
@@ -127,7 +137,7 @@ export EQUUS_MODEL="GLM-5.3"
 ### 使用
 
 ```bash
-# 交互式对话
+# 交互式 TUI 对话（需要真实终端）
 equus chat
 
 # 一次性执行
@@ -138,13 +148,16 @@ equus config check
 equus config show
 ```
 
-`chat` 模式中输入 `\quit` 或 Ctrl-D 退出。
+`chat` 是一个 Bubble Tea 全屏 TUI（参照 Amadeus）：底部输入框支持完整的行编辑（退格、左右移动、方向键召回历史），上方滚动显示对话与工具调用，`PgUp`/`PgDn` 翻页。按 `Ctrl-D`（输入为空时）或 `Ctrl-C`（空闲时）退出；运行中 `Esc`/`Ctrl-C` 可打断当前回合。
+
+> `chat` 需要 stdin 为交互式终端；在管道/重定向环境（如 `echo ... | equus chat`）下会报错并退出——非交互场景请用 `equus exec`。
 
 ## 已验证
 
 - `make check`（fmt/vet/test/build）全绿。
 - 真实端点（`https://llmapi.isrc.ac.cn/v1`，GLM-5.3 / DeepSeek-V4-Flash）：
   - `equus exec` 单轮问答 ✅
-  - `equus chat` 多轮记忆（"我叫小明" → "我叫什么名字？"）✅
+  - `equus chat`（TUI）多轮记忆（"我叫小明" → "我叫什么名字？"）✅
+  - `equus chat`（TUI）流式对话：输入、退格删除、`Ctrl-D` 退出均正常 ✅
   - 工具往返：读取 `note.txt` → 写入 `answer.txt` ✅
   - 流式 reasoning / 内容 / token 用量输出 ✅
