@@ -1,6 +1,6 @@
 # Equus
 
-Equus 是一个主要仿照 Codex（OpenAI 终端 Coding Agent）架构搭建的极简终端 Coding Agent，使用 Go 编写。目前实现了「配置加载 → LLM 客户端 → Agent 循环 → 工具执行 → CLI」这条主链，交互模式为仿 Amadeus 的 Bubble Tea TUI；其他高级能力（会话持久化、MCP、Skill、审批等）还在实现过程中。文件工具部分参照了 Claude Code，TUI 部分参照了 Amadeus。
+Equus 是一个主要仿照 Codex（OpenAI 终端 Coding Agent）架构搭建的极简终端 Coding Agent，使用 Go 编写。目前实现了「配置加载 → LLM 客户端 → Agent 循环 → 工具执行 → CLI」这条主链，交互模式为基于 Bubble Tea 的全屏 TUI；其他高级能力（会话持久化、MCP、Skill、审批等）还在实现过程中。文件工具部分参照了 Claude Code。
 
 Equus（马属）—— 一匹小马。
 
@@ -39,13 +39,13 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 - **工具契约**：每个工具自带名称、自然语言描述和 JSON Schema 参数定义，由模型自主决定何时调用。
 - **文件工具集与安全默认值**：`read_file` / `write_file` / `list_files` 三个文件工具，所有路径限制在工作目录内（`resolvePath` 逃逸防护）——Claude Code 权限与沙箱思路的极简版。
 
+### 终端界面
+
+- **TUI**：`internal/tui` 基于 Bubble Tea（`bubbles/textarea` 输入、`bubbles/viewport` 滚动、`lipgloss` 配色）实现全屏交互：底部输入框带完整行编辑，上方滚动显示对话与工具调用。仅实现 Equus 当前能力范围，markdown 渲染、审批对话框、slash command、session 选择器等尚未纳入。
+
 ### 待实现的能力
 
 会话持久化（thread/rollout）、MCP、Skill、审批（approval）、compaction、multi-agent、web fetch/search 等还在实现过程中。
-
-### 参照了 Amadeus
-
-- **TUI**：`internal/tui` 仿照 Amadeus 的 Bubble Tea 界面（`bubbles/textarea` 输入、`bubbles/viewport` 滚动、`lipgloss` 配色），裁剪掉 Equus 尚无对应能力的部分（markdown 渲染、审批对话框、slash command、session 选择器、MCP、multi-agent 等）。命名统一替换为 Equus。
 
 ## 目录结构
 
@@ -57,7 +57,7 @@ Equus/
 │   ├── cli/                 # Cobra 命令：chat / exec / config / version
 │   ├── config/              # YAML 加载、env 展开、校验、脱敏
 │   ├── agent/               # Agent 循环与内置工具
-│   ├── tui/                 # Bubble Tea 交互界面（仿 Amadeus）
+│   ├── tui/                 # Bubble Tea 全屏交互界面
 │   └── llm/                 # Provider 中立模型域
 │       └── openai/          # Chat Completions 适配器（非流式 + SSE 流式）
 ├── Makefile
@@ -148,7 +148,7 @@ equus config check
 equus config show
 ```
 
-`chat` 是一个 Bubble Tea 全屏 TUI（参照 Amadeus）：底部输入框支持完整的行编辑（退格、左右移动、方向键召回历史），上方滚动显示对话与工具调用，`PgUp`/`PgDn` 翻页。按 `Ctrl-D`（输入为空时）或 `Ctrl-C`（空闲时）退出；运行中 `Esc`/`Ctrl-C` 可打断当前回合。
+`chat` 是一个 Bubble Tea 全屏 TUI：底部输入框支持完整的行编辑（退格、左右移动、方向键召回历史），上方滚动显示对话与工具调用，`PgUp`/`PgDn` 翻页。按 `Ctrl-D`（输入为空时）或 `Ctrl-C`（空闲时）退出；运行中 `Esc`/`Ctrl-C` 可打断当前回合。
 
 > `chat` 需要 stdin 为交互式终端；在管道/重定向环境（如 `echo ... | equus chat`）下会报错并退出——非交互场景请用 `equus exec`。
 

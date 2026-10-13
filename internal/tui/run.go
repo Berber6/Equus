@@ -58,12 +58,14 @@ func Run(ctx context.Context, options RunOptions) error {
 	if err != nil {
 		return err
 	}
-	model.transcript = append(model.transcript, model.banner())
+	// Inline mode (no alternate screen): the transcript is written to the
+	// terminal's normal scrollback via tea.Println, so exiting leaves the
+	// conversation visible and the terminal's own scrollback and mouse wheel
+	// work as usual. Only the composer is a managed bottom region.
 	program := tea.NewProgram(model,
 		tea.WithContext(ctx),
 		tea.WithInput(input),
 		tea.WithOutput(output),
-		tea.WithAltScreen(),
 	)
 	model.program.program = program
 	_, err = program.Run()

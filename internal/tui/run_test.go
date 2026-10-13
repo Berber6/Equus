@@ -55,7 +55,7 @@ func TestUpdateCommitAndQuit(t *testing.T) {
 		t.Fatalf("input = %q", got)
 	}
 
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, command := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if !model.running {
 		t.Fatal("expected turn to be running after enter")
@@ -63,8 +63,11 @@ func TestUpdateCommitAndQuit(t *testing.T) {
 	if model.input.Value() != "" {
 		t.Fatalf("input not cleared: %q", model.input.Value())
 	}
-	if !strings.Contains(strings.Join(model.transcript, "\n"), "hello") {
-		t.Fatalf("user line not committed: %v", model.transcript)
+	if command == nil {
+		t.Fatal("expected a command to echo the user line and start the turn")
+	}
+	if !strings.Contains(model.userLine("hello"), "hello") {
+		t.Fatal("user line rendering lost the prompt text")
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
@@ -88,19 +91,45 @@ func TestBackspaceDeletesCharacter(t *testing.T) {
 	}
 }
 
-func TestFinishTurnCommitsAnswer(t *testing.T) {
+// TestUpdateHandlesContentDeltaViaCopy exercises the value-copy path Bubble
+// Tea takes: Update receives the model by value and a streaming delta must not
+// corrupt shared state (regression for the strings.Builder copy panic).
+func TestUpdateHandlesContentDeltaViaCopy(t *testing.T) {
+	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := model.Update(eventMsg{event: agent.Event{Kind: agent.EventContentDelta, Text: "你好"}})
+	model = updated.(Model)
+	updated, _ = model.Update(eventMsg{event: agent.Event{Kind: agent.EventContentDelta, Text: "世界"}})
+	model = updated.(Model)
+	if model.active != "你好世界" {
+		t.Fatalf("active = %q, want %q", model.active, "你好世界")
+	}
+}
+
+func TestFinishTurnFlushesAnswer(t *testing.T) {
 	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	model.running = true
 	model.handleEvent(agent.Event{Kind: agent.EventContentDelta, Text: "你好"})
-	model.finishTurn(turnDoneMsg{answer: "你好"})
+	if model.active != "你好" {
+		t.Fatalf("active = %q, want %q", model.active, "你好")
+	}
+	command := model.finishTurn(turnDoneMsg{answer: "你好"})
 	if model.running {
 		t.Fatal("running should be false after turn done")
 	}
-	if !strings.Contains(strings.Join(model.transcript, "\n"), "你好") {
-		t.Fatalf("answer not committed: %v", model.transcript)
+	if command == nil {
+		t.Fatal("expected a print command for the committed answer")
+	}
+	if model.active != "" {
+		t.Fatalf("active buffer not reset: %q", model.active)
+	}
+	if !strings.Contains(model.assistantLine("你好"), "你好") {
+		t.Fatal("assistant line rendering lost the answer")
 	}
 }
 

@@ -18,9 +18,8 @@ const (
 	colorLevelTrueColor
 )
 
-// palette holds the styles used to render the interface. It is a trimmed
-// adaptation of the Amadeus palette: syntax highlighting and theme lookups
-// are dropped because Equus renders plain text.
+// palette holds the styles used to render the interface. Syntax highlighting
+// and theme lookups are omitted because Equus renders plain text.
 type palette struct {
 	level   colorLevel
 	dark    bool

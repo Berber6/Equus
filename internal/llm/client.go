@@ -1,6 +1,5 @@
-// Package llm defines the provider-neutral model domain used by Equus.
-// It mirrors the core abstractions of the Amadeus project, reduced to the
-// minimum needed for basic chat and tool calling.
+// Package llm defines the provider-neutral model domain used by Equus,
+// reduced to the minimum needed for basic chat and tool calling.
 package llm
 
 import (

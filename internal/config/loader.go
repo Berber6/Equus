@@ -84,7 +84,7 @@ func (loader Loader) resolveAPIKeys(configured Config) (Config, error) {
 }
 
 // applyEnvironmentOverrides injects environment variables above the values
-// read from the file, mirroring Amadeus' precedence model.
+// read from the file.
 func applyEnvironmentOverrides(configured Config) (Config, error) {
 	if model, ok := os.LookupEnv(EnvModel); ok && strings.TrimSpace(model) != "" {
 		configured.Model = strings.TrimSpace(model)

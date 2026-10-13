@@ -1,6 +1,8 @@
-// Package tui implements the interactive Equus terminal interface, modeled on
-// the Amadeus TUI but trimmed to Equus's capabilities: a scrolling transcript,
-// a raw-mode input box, and streaming agent events.
+// Package tui implements the interactive Equus terminal interface in inline
+// mode: the conversation is written into the terminal's normal scrollback
+// (so it survives exit and scrolls with the terminal's own scrollbar and
+// wheel), while a raw-mode input box is managed as a small region at the
+// bottom of the screen.
 package tui
 
 import (
@@ -9,7 +11,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Godric-W/Equus/internal/agent"
@@ -38,13 +39,12 @@ type Model struct {
 	width  int
 	height int
 
-	input    textarea.Model
-	viewport viewport.Model
+	input textarea.Model
 
-	// transcript holds the committed, already-rendered lines shown above the
-	// composer. The streaming turn appends to a separate active buffer.
-	transcript []string
-	active     strings.Builder
+	// active accumulates the in-flight assistant stream (a plain string so the
+	// value-type model stays safe to copy); it is flushed to the scrollback at
+	// tool boundaries and turn end.
+	active string
 
 	running bool
 	status  string
@@ -99,9 +99,6 @@ func NewModel(ctx context.Context, options Options) (Model, error) {
 	input.Focus()
 	_ = input.Cursor.SetMode(cursor.CursorStatic)
 
-	viewer := viewport.New(80, 20)
-	viewer.MouseWheelEnabled = true
-
 	return Model{
 		ctx:        ctx,
 		cancel:     cancel,
@@ -109,7 +106,6 @@ func NewModel(ctx context.Context, options Options) (Model, error) {
 		program:    &programRef{},
 		palette:    p,
 		input:      input,
-		viewport:   viewer,
 		width:      100,
 		height:     30,
 		status:     "idle",
@@ -122,7 +118,12 @@ func NewModel(ctx context.Context, options Options) (Model, error) {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tea.HideCursor, textarea.Blink)
+	return tea.Batch(
+		tea.HideCursor,
+		textarea.Blink,
+		// Emit the banner into the scrollback once the program is running.
+		tea.Println(m.banner()),
+	)
 }
 
 // programRef holds the running program so the model (copied by value) can

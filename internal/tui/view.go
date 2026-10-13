@@ -6,35 +6,18 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 )
 
-// View renders the whole interface: the scrolling transcript, an optional
-// working line, and the input composer at the bottom.
+// View renders the managed bottom region only: an optional working line and
+// the input composer. The conversation itself is emitted through tea.Println
+// into the terminal scrollback, not drawn here.
 func (m Model) View() string {
-	body := m.viewport.View()
-	parts := make([]string, 0, 3)
-	if body != "" {
-		parts = append(parts, body)
-	}
+	composer := m.composerView()
 	if working := m.workingLine(); working != "" {
-		parts = append(parts, working)
+		return working + "\n" + composer
 	}
-	parts = append(parts, m.composerView())
-	return strings.Join(parts, "\n")
+	return composer
 }
 
-// refreshViewport re-renders the transcript into the scroll viewport and pins
-// it to the bottom so new output stays visible.
-func (m *Model) refreshViewport() {
-	content := strings.Join(m.transcript, "\n")
-	if active := m.active.String(); strings.TrimSpace(active) != "" {
-		for _, line := range strings.Split(strings.TrimRight(active, "\n"), "\n") {
-			content += "\n  " + line
-		}
-	}
-	m.viewport.SetContent(content)
-	m.viewport.GotoBottom()
-}
-
-// composerView renders the input box, highlighted while a turn is running.
+// composerView renders the input box, dimmed while a turn is running.
 func (m Model) composerView() string {
 	rendered := m.input.View()
 	if m.running {
@@ -60,6 +43,24 @@ func (m Model) banner() string {
 	if m.cwd != "" {
 		parts = append(parts, m.palette.dim().Render(m.cwd))
 	}
-	line := strings.Join(parts, m.palette.dim().Render(" · "))
-	return xansi.Truncate(line, m.width, "")
+	return strings.Join(parts, m.palette.dim().Render(" · "))
+}
+
+// userLine renders a submitted prompt for the scrollback.
+func (m Model) userLine(text string) string {
+	return m.palette.user().Render("› " + text)
+}
+
+// assistantLine renders the committed assistant answer for the scrollback.
+func (m Model) assistantLine(text string) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	for index, line := range lines {
+		lines[index] = "  " + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+// inputPromptWidth is the display width of the input prompt glyph.
+func inputPromptWidth() int {
+	return xansi.StringWidth(inputPrompt)
 }

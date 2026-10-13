@@ -19,29 +19,25 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.resize(message.Width, message.Height)
 		return m, nil
 	case eventMsg:
-		m.handleEvent(message.event)
-		m.refreshViewport()
-		return m, nil
+		return m, m.handleEvent(message.event)
 	case turnDoneMsg:
-		m.finishTurn(message)
-		m.refreshViewport()
-		return m, nil
+		return m, m.finishTurn(message)
+	case printMsg:
+		return m, tea.Println(message.text)
 	case tea.KeyMsg:
 		return m.handleKey(message)
 	}
 	return m, nil
 }
 
-// resize reflows the input box, viewport and transcript to the new size.
+// resize reflows the input box to the new size.
 func (m *Model) resize(width, height int) {
 	if width < minWidth {
 		width = minWidth
 	}
 	m.width = width
 	m.height = height
-	m.input.SetWidth(width - len(inputPrompt))
-	m.viewport.Width = width
-	m.refreshViewport()
+	m.input.SetWidth(width - inputPromptWidth())
 	m.ready = true
 }
 
@@ -64,14 +60,13 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case "esc":
+		if m.running {
+			m.cancel()
+			m.status = "cancelling"
+			return m, nil
+		}
 		m.input.Reset()
 		m.historyPos = -1
-		return m, nil
-	case "pgup":
-		m.viewport.ViewUp()
-		return m, nil
-	case "pgdown":
-		m.viewport.ViewDown()
 		return m, nil
 	case "up":
 		if m.running {
@@ -98,10 +93,14 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		m.history = append(m.history, prompt)
 		m.historyPos = -1
-		m.commit(prompt)
+		m.active = ""
 		m.running = true
 		m.status = "thinking"
-		return m, m.runTurn(prompt)
+		// Echo the user's line into the scrollback, then start the turn.
+		return m, tea.Sequence(
+			tea.Println(m.userLine(prompt)),
+			m.runTurn(prompt),
+		)
 	}
 
 	var command tea.Cmd
@@ -123,58 +122,55 @@ func (m Model) runTurn(prompt string) tea.Cmd {
 	}
 }
 
-// handleEvent folds a streaming agent event into the active buffer.
-func (m *Model) handleEvent(event agent.Event) {
+// handleEvent folds a streaming agent event into the model, emitting any
+// lines that belong in the durable scrollback.
+func (m *Model) handleEvent(event agent.Event) tea.Cmd {
 	switch event.Kind {
 	case agent.EventReasoningDelta:
 		m.status = "thinking"
 	case agent.EventContentDelta:
 		m.status = "responding"
-		m.active.WriteString(event.Text)
+		m.active += event.Text
 	case agent.EventToolCall:
-		m.flushActive()
-		m.transcript = append(m.transcript, m.palette.tool().Render("[tool] "+event.Tool+"("+event.Text+")"))
+		command := m.flushActive()
+		m.status = "tool: " + event.Tool
+		line := m.palette.tool().Render("[tool] " + event.Tool + "(" + event.Text + ")")
+		return tea.Sequence(command, tea.Println(line))
 	case agent.EventToolResult:
-		m.transcript = append(m.transcript, m.palette.dim().Render("[tool-result] "+event.Tool+": "+firstLine(event.Text)))
+		line := m.palette.dim().Render("[tool-result] " + event.Tool + ": " + firstLine(event.Text))
+		return tea.Println(line)
 	case agent.EventUsage:
 		if event.Usage != nil {
-			m.transcript = append(m.transcript, m.palette.dim().Render(usageLine(event.Usage)))
+			return tea.Println(m.palette.dim().Render(usageLine(event.Usage)))
 		}
 	case agent.EventError:
-		m.transcript = append(m.transcript, m.palette.failure().Render("error: "+event.Text))
+		return tea.Println(m.palette.failure().Render("error: " + event.Text))
 	}
+	return nil
 }
 
-// finishTurn finalizes the turn, committing the answer into the transcript.
-func (m *Model) finishTurn(message turnDoneMsg) {
-	m.flushActive()
+// finishTurn finalizes the turn, committing the answer into the scrollback.
+func (m *Model) finishTurn(message turnDoneMsg) tea.Cmd {
+	commands := []tea.Cmd{m.flushActive()}
 	if message.err != nil && !errors.Is(message.err, context.Canceled) {
 		if text := message.err.Error(); text != "" {
-			m.transcript = append(m.transcript, m.palette.failure().Render("error: "+text))
+			commands = append(commands, tea.Println(m.palette.failure().Render("error: "+text)))
 		}
 	}
 	m.running = false
 	m.status = "idle"
+	return tea.Sequence(commands...)
 }
 
-// commit adds the user's line to the transcript before sampling begins.
-func (m *Model) commit(prompt string) {
-	m.flushActive()
-	for _, line := range strings.Split(prompt, "\n") {
-		m.transcript = append(m.transcript, m.palette.user().Render("› "+line))
+// flushActive emits the accumulated assistant stream into the scrollback and
+// resets the buffer.
+func (m *Model) flushActive() tea.Cmd {
+	text := strings.TrimRight(m.active, "\n")
+	m.active = ""
+	if strings.TrimSpace(text) == "" {
+		return nil
 	}
-}
-
-// flushActive moves the streaming buffer into the committed transcript.
-func (m *Model) flushActive() {
-	text := strings.TrimRight(m.active.String(), "\n")
-	m.active.Reset()
-	if text == "" {
-		return
-	}
-	for _, line := range strings.Split(text, "\n") {
-		m.transcript = append(m.transcript, "  "+line)
-	}
+	return tea.Println(m.assistantLine(text))
 }
 
 // recallHistory walks the submitted-prompt history. It reports whether the

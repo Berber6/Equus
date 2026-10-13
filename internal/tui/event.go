@@ -17,3 +17,10 @@ type turnDoneMsg struct {
 	answer string
 	err    error
 }
+
+// printMsg carries already-rendered lines to be written into the terminal's
+// scrollback via tea.Println. This is how the conversation becomes durable:
+// it lives in normal scrollback rather than a managed full-screen region.
+type printMsg struct {
+	text string
+}
