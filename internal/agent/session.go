@@ -147,7 +147,14 @@ func (session *Session) sample(ctx context.Context, sink func(Event)) (llm.Respo
 
 	stream, err := session.client.Stream(ctx, request)
 	if err != nil {
-		// Fall back to a blocking request when streaming is unavailable.
+		// Fall back to a blocking request only when the failure looks
+		// recoverable in another form (e.g. a dropped stream). A definitive
+		// rejection from the provider — an HTTP 4xx/5xx status — would fail
+		// identically on the blocking path, so retrying it just wastes a
+		// request and muddies the error; surface it directly instead.
+		if !llm.IsRetryable(err) {
+			return llm.ResponseItem{}, err
+		}
 		response, completeErr := session.client.Complete(ctx, request)
 		if completeErr != nil {
 			return llm.ResponseItem{}, errors.Join(err, completeErr)

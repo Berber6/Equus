@@ -15,12 +15,15 @@ import (
 
 // fakeClient drives the session loop with scripted responses.
 type fakeClient struct {
-	responses []llm.Response
-	index     int
-	requests  []llm.Request
+	responses     []llm.Response
+	index         int
+	requests      []llm.Request
+	streamErr     error
+	completeCalls int
 }
 
 func (client *fakeClient) Complete(_ context.Context, request llm.Request) (llm.Response, error) {
+	client.completeCalls++
 	client.requests = append(client.requests, request)
 	if client.index >= len(client.responses) {
 		return llm.Response{}, errors.New("no more scripted responses")
@@ -31,6 +34,9 @@ func (client *fakeClient) Complete(_ context.Context, request llm.Request) (llm.
 }
 
 func (client *fakeClient) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
+	if client.streamErr != nil {
+		return nil, client.streamErr
+	}
 	response, err := client.Complete(ctx, request)
 	if err != nil {
 		return nil, err
@@ -125,6 +131,29 @@ func TestAskExecutesToolRoundTrip(t *testing.T) {
 	history := session.History()
 	if len(history) != 4 || history[2].Role != llm.RoleTool || history[2].Content != "42" {
 		t.Fatalf("history = %+v", history)
+	}
+}
+
+// nonRetryableError mimics a provider rejection: the stream call fails in a
+// way that must not be retried on the blocking path.
+type nonRetryableError struct{}
+
+func (nonRetryableError) Error() string   { return "provider rejected request" }
+func (nonRetryableError) Retryable() bool { return false }
+
+func TestAskDoesNotFallBackOnTerminalStreamError(t *testing.T) {
+	client := &fakeClient{streamErr: nonRetryableError{}}
+	session, err := NewSession(client, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = session.Ask(context.Background(), "hi", func(Event) {})
+	if err == nil {
+		t.Fatal("expected error to surface")
+	}
+	// The blocking fallback must not have been attempted.
+	if client.completeCalls != 0 {
+		t.Fatalf("Complete called %d times, want 0", client.completeCalls)
 	}
 }
 

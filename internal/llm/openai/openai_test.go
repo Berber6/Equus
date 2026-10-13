@@ -130,6 +130,26 @@ func TestCompleteSurfacesProviderError(t *testing.T) {
 	}
 }
 
+func TestProviderErrorIsNotRetryable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusUnauthorized)
+		writer.Write([]byte(`{"error":{"message":"Invalid token"}}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{APIKey: "sk-test", BaseURL: server.URL, Model: "glm-5.3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Stream(context.Background(), llm.NewRequest("glm-5.3", []llm.ResponseItem{llm.UserMessage("hi")}))
+	if err == nil {
+		t.Fatal("expected provider error")
+	}
+	if llm.IsRetryable(err) {
+		t.Fatalf("provider rejection must not be retryable: %v", err)
+	}
+}
+
 func TestRequestIncludesSystemAndTools(t *testing.T) {
 	var body map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

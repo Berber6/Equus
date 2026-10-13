@@ -80,8 +80,26 @@ func mapFinishReason(reason string) llm.FinishReason {
 	}
 }
 
+// ProviderError is a terminal error returned by the upstream endpoint: the
+// transport succeeded but the server rejected the request (non-2xx status).
+// It is deterministic — retrying the same request against the same endpoint
+// would fail identically — so callers must not fall back to another wire
+// format on seeing it.
+type ProviderError struct {
+	StatusCode int
+	Body       string
+}
+
+func (err *ProviderError) Error() string {
+	return fmt.Sprintf("openai provider error %d: %s", err.StatusCode, truncate(err.Body, 512))
+}
+
+// Retryable reports whether the error is worth retrying in another form.
+// A definitive provider rejection is not.
+func (err *ProviderError) Retryable() bool { return false }
+
 func providerError(status int, payload []byte) error {
-	return fmt.Errorf("openai provider error %d: %s", status, truncate(string(payload), 512))
+	return &ProviderError{StatusCode: status, Body: string(payload)}
 }
 
 func truncate(text string, limit int) string {
