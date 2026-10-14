@@ -49,6 +49,7 @@ func (m Model) View() string {
 		historyRows = 0
 	}
 	history := m.transcriptWindow(historyRows)
+	showScrollbar := m.picker == nil
 	if m.picker != nil {
 		history = m.renderSessionPicker(historyRows)
 	}
@@ -62,10 +63,38 @@ func (m Model) View() string {
 	lines = append(lines, composer...)
 	lines = append(lines, status)
 	tag := frameTag()
+
+	// A scrollbar is overlaid on the transcript region's rightmost column.
+	var bar []bool
+	if showScrollbar && m.width >= minWidth {
+		bar = scrollbar(m.transcriptLen(), historyRows, m.scroll)
+	}
 	for index, line := range lines {
-		lines[index] = padToWidth(line, maxInt(1, m.width-1)) + tag
+		padded := padToWidth(line, maxInt(1, m.width-1))
+		if bar != nil && index < len(bar) {
+			padded += m.scrollbarCell(bar[index])
+		}
+		lines[index] = padded + tag
 	}
 	return strings.Join(lines, "\n")
+}
+
+// transcriptLen is the total number of transcript lines, including the
+// in-flight assistant buffer.
+func (m Model) transcriptLen() int {
+	length := len(m.transcript)
+	if active := strings.TrimSpace(m.active); active != "" {
+		length += len(m.assistantEntry(m.active))
+	}
+	return length
+}
+
+// scrollbarCell renders one scrollbar column: a thumb or a track.
+func (m Model) scrollbarCell(thumb bool) string {
+	if thumb {
+		return m.palette.accent().Render("█")
+	}
+	return m.palette.border().Render("│")
 }
 
 // transcriptWindow returns the visible slice of the transcript for the given
