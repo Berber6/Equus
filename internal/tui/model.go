@@ -71,12 +71,16 @@ type Model struct {
 
 	// picker is the session-selection overlay, when open.
 	picker *sessionPicker
+	// deleteConfirm, when true, awaits a y/n for /delete.
+	deleteConfirm bool
+	// popup is the slash-command completion overlay.
+	popup slashPopup
 	// loadSessionFn loads a session's items by id (set by Run).
 	loadSessionFn func(id string) ([]llm.ResponseItem, error)
 	// session ops (set by Run).
-	sessionID    string
-	renameFn     func(id, title string) error
-	deleteFn     func(id string) error
+	sessionID string
+	renameFn  func(id, title string) error
+	deleteFn  func(id string) error
 
 	// markdown / syntaxHighlight control assistant output rendering.
 	markdown        bool
@@ -90,6 +94,7 @@ type Model struct {
 	version string
 	model   string
 	cwd     string
+	branch  string
 }
 
 // approvalPrompt is an in-flight approval request shown above the composer.

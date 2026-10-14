@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/Godric-W/Equus/internal/agent"
+	"github.com/Godric-W/Equus/internal/llm"
 )
 
 // errNoSession is returned when the model is built without an agent session.
@@ -23,4 +24,11 @@ type turnDoneMsg struct {
 type approvalMsg struct {
 	summary string
 	reply   chan agent.ApprovalDecision
+}
+
+// sessionLoadedMsg carries a selected session's items back to the loop.
+type sessionLoadedMsg struct {
+	id    string
+	items []llm.ResponseItem
+	err   error
 }

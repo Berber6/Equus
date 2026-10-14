@@ -37,8 +37,12 @@ func (m *Model) dispatchSlashCommand(invocation slashInvocation) tea.Cmd {
 		return nil
 	case slashResume:
 		m.appendTranscript("")
-		m.appendTranscript(m.palette.dim().Render("  resume is not interactive yet — run `equus chat --resume` or `--continue`"))
+		m.appendTranscript(m.palette.dim().Render("  run `equus --resume` to pick a session, or `--continue` for the most recent"))
 		return nil
+	case slashRename:
+		return m.renameSession(invocation.Args)
+	case slashDelete:
+		return m.confirmDeleteSession()
 	case slashQuit:
 		return tea.Quit
 	default:
@@ -46,6 +50,39 @@ func (m *Model) dispatchSlashCommand(invocation slashInvocation) tea.Cmd {
 		m.appendTranscript(m.errorEntry(fmt.Sprintf("unknown command /%s (try /help)", invocation.Command))...)
 		return nil
 	}
+}
+
+// renameSession sets the current session's title.
+func (m *Model) renameSession(title string) tea.Cmd {
+	title = strings.TrimSpace(title)
+	m.appendTranscript("")
+	if title == "" {
+		m.appendTranscript(m.errorEntry("usage: /rename <title>")...)
+		return nil
+	}
+	if m.renameFn == nil || m.sessionID == "" {
+		m.appendTranscript(m.palette.dim().Render("  (no saved session to rename)"))
+		return nil
+	}
+	if err := m.renameFn(m.sessionID, title); err != nil {
+		m.appendTranscript(m.errorEntry("rename failed: " + err.Error())...)
+		return nil
+	}
+	m.appendTranscript(m.palette.dim().Render("  renamed session to ") + title)
+	return nil
+}
+
+// confirmDeleteSession stages a delete that a following y/n key confirms.
+func (m *Model) confirmDeleteSession() tea.Cmd {
+	if m.deleteFn == nil || m.sessionID == "" {
+		m.appendTranscript("")
+		m.appendTranscript(m.palette.dim().Render("  (no saved session to delete)"))
+		return nil
+	}
+	m.deleteConfirm = true
+	m.appendTranscript("")
+	m.appendTranscript(m.palette.failure().Render("delete this session (" + m.sessionID + ")? [y/n]"))
+	return nil
 }
 
 // clearConversation resets the transcript and the session history, then re-adds

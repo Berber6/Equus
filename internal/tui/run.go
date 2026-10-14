@@ -11,6 +11,7 @@ import (
 
 	"github.com/Godric-W/Equus/internal/agent"
 	"github.com/Godric-W/Equus/internal/llm"
+	"github.com/Godric-W/Equus/internal/threadstore"
 )
 
 // RunOptions configures the interactive session.
@@ -28,6 +29,16 @@ type RunOptions struct {
 	// chroma highlighting of fenced code blocks.
 	Markdown        bool
 	SyntaxHighlight bool
+	// Sessions, when non-nil, opens the interactive picker with these entries.
+	Sessions []threadstore.Meta
+	// LoadSession loads a session's items by id.
+	LoadSession func(id string) ([]llm.ResponseItem, error)
+	// SessionID is the current session's id (for rename/delete).
+	SessionID string
+	RenameFn  func(id, title string) error
+	DeleteFn  func(id string) error
+	// NoLogo skips the startup logo (used when a picker will replace it).
+	NoLogo bool
 }
 
 // ErrNotTerminal is returned when the input stream is not an interactive
@@ -63,16 +74,24 @@ func Run(ctx context.Context, options RunOptions) error {
 		IsTTY:           true,
 		Markdown:        options.Markdown,
 		SyntaxHighlight: options.SyntaxHighlight,
+		Sessions:        options.Sessions,
+		LoadSession:     options.LoadSession,
+		SessionID:       options.SessionID,
+		RenameFn:        options.RenameFn,
+		DeleteFn:        options.DeleteFn,
 	})
 	if err != nil {
 		return err
 	}
+	model.branch = detectGitBranch(options.CWD)
 	model.ctxWindow = options.Session.ContextWindow()
 	if used, _ := options.Session.ContextUsage(); used > 0 {
 		model.ctxUsed = used
 	}
-	model.appendTranscript(model.logoLines()...)
-	model.appendTranscript("")
+	if model.picker == nil {
+		model.appendTranscript(model.logoLines()...)
+		model.appendTranscript("")
+	}
 	if len(options.History) > 0 {
 		model.appendTranscript(renderHistory(model, options.History)...)
 	}

@@ -109,26 +109,59 @@ func TestUpdateHandlesContentDeltaViaCopy(t *testing.T) {
 	}
 }
 
-// The composer uses a fixed content height. Resizing the textarea on every
-// keystroke leaves its internal viewport YOffset stale, which scrolls the first
-// line out of view (so only the last line is visible) — the bug this guards.
-func TestInputHeightIsFixed(t *testing.T) {
+// The composer grows with the input (up to maxInputRows) and shrinks back.
+// The composer panel grows with the input (up to maxInputRows content rows).
+func TestInputLinesGrowWithContent(t *testing.T) {
 	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	model.resize(80, 24)
-	for _, r := range "one" {
-		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		model = updated.(Model)
+	if rows := len(model.visibleInputLines()); rows != 1 {
+		t.Fatalf("initial content rows = %d, want 1", rows)
 	}
-	if got := model.input.Height(); got != maxInputRows {
-		t.Fatalf("height = %d, want %d", got, maxInputRows)
-	}
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	// One newline -> two content rows.
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("one")})
 	model = updated.(Model)
-	if got := model.input.Height(); got != maxInputRows {
-		t.Fatalf("height after newline = %d, want %d", got, maxInputRows)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	model = updated.(Model)
+	if rows := len(model.visibleInputLines()); rows != 2 {
+		t.Fatalf("content rows after newline = %d, want 2", rows)
+	}
+	// The earliest line must be preserved (regression: viewport YOffset).
+	if lines := model.visibleInputLines(); !strings.Contains(stripANSI(lines[0]), "one") {
+		t.Fatalf("first line lost: %q", stripANSI(lines[0]))
+	}
+}
+
+func TestInputLinesClampedToMax(t *testing.T) {
+	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.resize(80, 24)
+	model.input.SetValue("1\n2\n3\n4\n5\n6\n7\n8")
+	if rows := len(model.visibleInputLines()); rows != maxInputRows {
+		t.Fatalf("content rows = %d, want %d", rows, maxInputRows)
+	}
+}
+
+// Every composer row is painted full-width with the box background so the input
+// box reads as a single filled band (including the empty/placeholder state).
+func TestComposerBackgroundRows(t *testing.T) {
+	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.resize(40, 24)
+	rows := model.composerView()
+	if len(rows) != 3 {
+		t.Fatalf("empty composer rows = %d, want 3 (pad+1+pad)", len(rows))
+	}
+	for i, row := range rows {
+		if w := xansi.StringWidth(row); w >= 40 {
+			t.Fatalf("row %d width = %d, want < 40", i, w)
+		}
 	}
 }
 
@@ -140,8 +173,10 @@ func TestViewLinesPaddedToWidth(t *testing.T) {
 	model.resize(40, 24)
 	view := model.View()
 	for _, line := range strings.Split(view, "\n") {
-		if width := xansi.StringWidth(line); width != 40 {
-			t.Fatalf("line width = %d, want 40: %q", width, line)
+		// Rows are kept strictly under the terminal width (never exactly width)
+		// so the bare-newline separators do not drift the cursor.
+		if width := xansi.StringWidth(line); width >= 40 {
+			t.Fatalf("line width = %d, want < 40: %q", width, line)
 		}
 	}
 }
@@ -155,8 +190,8 @@ func TestRenderPrefixes(t *testing.T) {
 	if got := stripANSI(strings.Join(model.userEntry("hello"), "\n")); !strings.Contains(got, "› hello") {
 		t.Fatalf("userEntry = %q", got)
 	}
-	if got := stripANSI(model.assistantLine("answer")); !strings.Contains(got, "• answer") {
-		t.Fatalf("assistantLine = %q", got)
+	if got := stripANSI(strings.Join(model.assistantEntry("answer"), "\n")); !strings.Contains(got, "• answer") {
+		t.Fatalf("assistantEntry = %q", got)
 	}
 	if got := stripANSI(strings.Join(model.toolCallEntry("grep", "pattern"), "\n")); !strings.Contains(got, "Ran grep") {
 		t.Fatalf("toolCallEntry = %q", got)

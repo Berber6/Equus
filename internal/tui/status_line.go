@@ -16,6 +16,9 @@ func (m Model) statusLine() string {
 	if m.cwd != "" {
 		segments = append(segments, m.palette.statusLineStyle(statusAccentPath).Render(m.cwd))
 	}
+	if m.branch != "" {
+		segments = append(segments, m.palette.statusLineStyle(statusAccentBranch).Render("⎇ "+m.branch))
+	}
 	if percent, ok := m.contextPercent(); ok {
 		style := m.palette.statusLineStyle(statusAccentUsage)
 		if percent >= 90 {

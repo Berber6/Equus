@@ -36,6 +36,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		updated, command := m.handleKey(message)
 		if model, ok := updated.(Model); ok {
+			model.popup.sync(model.input.Value())
 			model.updateInputLayout()
 			return model, command
 		}
@@ -97,6 +98,11 @@ func (m *Model) updateInputLayout() {
 // through to the textarea, whose raw-mode handling covers backspace, arrows
 // and cursor movement — the reason the TUI replaces the old line reader.
 func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// A pending /delete confirmation captures y/n.
+	if m.deleteConfirm {
+		return m.resolveDeleteConfirm(key), nil
+	}
+
 	// While the session picker is open, it captures all keys.
 	if m.picker != nil {
 		model, command, _ := m.handlePickerKey(key)
@@ -116,6 +122,41 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.replyApproval(agent.ApprovalDenied)
 		}
 		return m, nil
+	}
+	// When the command popup is active, a few keys drive it first.
+	if m.popup.active() {
+		switch key.String() {
+		case "up":
+			m.popup.move(-1)
+			return m, nil
+		case "down":
+			m.popup.move(1)
+			return m, nil
+		case "tab":
+			if selected, ok := m.popup.selectedCommand(); ok {
+				m.input.SetValue(completeSlashCommand(selected))
+				m.input.CursorEnd()
+				m.popup.dismiss(m.input.Value())
+				m.updateInputLayout()
+			}
+			return m, nil
+		case "esc":
+			m.popup.dismiss(m.input.Value())
+			return m, nil
+		case "enter":
+			// Complete only while the input is still a bare command prefix;
+			// a full command (with args or trailing space) falls through to
+			// normal submission.
+			if _, isPrefix := slashFilterValue(m.input.Value()); isPrefix {
+				if selected, ok := m.popup.selectedCommand(); ok {
+					m.input.SetValue(completeSlashCommand(selected))
+					m.input.CursorEnd()
+					m.popup.dismiss(m.input.Value())
+					m.updateInputLayout()
+				}
+				return m, nil
+			}
+		}
 	}
 	switch key.String() {
 	case "ctrl+c":

@@ -36,8 +36,9 @@ func (m Model) View() string {
 	}
 	working := m.workingLine()
 	status := m.statusLine()
+	popup := m.popupView()
 
-	fixedRows := len(composer)
+	fixedRows := len(composer) + len(popup)
 	if working != "" {
 		fixedRows++
 	}
@@ -48,12 +49,16 @@ func (m Model) View() string {
 		historyRows = 0
 	}
 	history := m.transcriptWindow(historyRows)
+	if m.picker != nil {
+		history = m.renderSessionPicker(historyRows)
+	}
 
 	lines := make([]string, 0, m.height)
 	lines = append(lines, history...)
 	if working != "" {
 		lines = append(lines, working)
 	}
+	lines = append(lines, popup...)
 	lines = append(lines, composer...)
 	lines = append(lines, status)
 	tag := frameTag()
