@@ -180,6 +180,23 @@ func (tool ListFilesTool) Execute(_ context.Context, arguments json.RawMessage) 
 	return strings.Join(names, "\n"), nil
 }
 
+// NewReadOnlyRegistry builds the read-only tool set (no writes, no shell, no
+// network) used by subagents.
+func NewReadOnlyRegistry(root string) (*toolRegistry, error) {
+	registry := &toolRegistry{}
+	for _, tool := range []Tool{
+		ReadFileTool{Root: root},
+		ListFilesTool{Root: root},
+		GlobTool{Root: root},
+		GrepTool{Root: root},
+	} {
+		if err := registry.register(tool); err != nil {
+			return nil, err
+		}
+	}
+	return registry, nil
+}
+
 // NewDefaultRegistry builds the default tool set rooted at the working
 // directory.
 func NewDefaultRegistry(root string) (*toolRegistry, error) {

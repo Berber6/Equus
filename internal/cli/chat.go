@@ -280,6 +280,11 @@ func buildSession(configured config.Config, workingDir string) (*agent.Session, 
 	if err != nil {
 		return nil, "", err
 	}
+	// Enable background subagents (read-only, max 8) before composing the
+	// system prompt so the subagent tools appear in its tool list.
+	if err := session.EnableSubagents(workingDir, nil); err != nil {
+		return nil, "", err
+	}
 	session.SetBaseInstructions(agent.BuildBaseInstructions(agent.InstructionsInput{
 		CWD:         workingDir,
 		Platform:    runtime.GOOS + "/" + runtime.GOARCH,
@@ -288,8 +293,5 @@ func buildSession(configured config.Config, workingDir string) (*agent.Session, 
 		Skills:      skill.Discover(equusHome(), workingDir),
 		Override:    configured.BaseInstructions,
 	}))
-	if err != nil {
-		return nil, "", err
-	}
 	return session, configured.Model, nil
 }

@@ -1,6 +1,6 @@
 # Equus
 
-Equus 是一个主要仿照 Codex（OpenAI 终端 Coding Agent）架构搭建的极简终端 Coding Agent，使用 Go 编写。目前实现了「配置加载 → LLM 客户端 → Agent 循环 → 工具执行 → CLI」这条主链，交互模式为基于 Bubble Tea 的全屏 TUI；其他高级能力（会话持久化、MCP、Skill、审批等）还在实现过程中。文件工具部分参照了 Claude Code。
+Equus 是一个主要仿照 Codex（OpenAI 终端 Coding Agent）架构搭建的极简终端 Coding Agent，使用 Go 编写。主链为「配置加载 → LLM 客户端 → Agent 循环 → 工具执行 → TUI」；交互模式是完整的全屏 TUI，并已支持会话持久化/resume、审批策略、上下文压缩、MCP、Skill、子代理等能力。外层架构参照 Codex，文件工具契约与 TUI 参照 Claude Code。
 
 Equus（马属）—— 一匹小马。
 
@@ -24,16 +24,20 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
   - `apply_patch` —— 以补丁文本（`*** Begin Patch` … `*** End Patch`）新增 / 删除 / 更新 / 移动文件，支持多块编辑与模糊上下文定位；
   - `glob` —— 按 glob 模式查找文件（`**` 递归）；
   - `grep` —— 按正则搜索文件内容，返回 `path:line: text`；
-  - `shell` —— 在工作目录执行 shell 命令（默认需审批）。
-- **审批策略**：高危操作（默认 `shell`）按配置决定询问 / 放行 / 拒绝。`shell_allow_prefixes` 命令前缀白名单自动放行（默认含 `ls`/`cat`/`git status` 等只读命令）。交互模式弹窗确认（`[y]` 一次 / `[a]` 本会话 / `[p]` 永久 / `[n]` 拒绝），`[p]` 写入 `~/.equus/approvals.yaml`；非交互 `exec` 默认拒绝，`--allow-shell` 放行。
-- **自动压缩（compaction）**：上下文接近窗口上限（默认 80%）时，自动把较早历史摘要成一段、保留最近若干轮原文；状态行显示 `ctx N%`。
+  - `shell` —— 在工作目录执行 shell 命令（默认需审批）；
+  - `web_fetch` —— 抓取公开 HTTP(S) URL 的可读文本（拒绝私网/环回地址）。
+- **MCP 工具**：连接配置的 MCP server（stdio），把其工具动态注册为 `mcp__<server>__<tool>`（默认需审批）。
+- **子代理**：`spawn_agent` / `wait_agent` / `close_agent` —— 异步派生**只读**子代理执行子任务（最多 8 个，禁递归），完成后主动通知主会话。
+- **Skill**：启动时发现 `SKILL.md` 技能（`~/.equus/skills/` 与 `<cwd>/.equus/skills/`），在系统提示词中列出供模型按需读取。
+- **审批策略**：高危操作按类别（`shell` / `write` / `network` / `external`）决定询问 / 放行 / 拒绝。`shell_allow_prefixes` 命令前缀白名单自动放行（默认含 `ls`/`cat`/`git status` 等只读命令）。交互模式弹窗确认（`[y]` 一次 / `[a]` 本会话 / `[p]` 永久 / `[n]` 拒绝），`[p]` 写入 `~/.equus/approvals.yaml`；非交互 `exec` 默认拒绝，`--allow-shell` 放行。
+- **自动压缩（compaction）**：上下文接近窗口上限（默认 80%）时，自动把较早历史摘要成一段、保留最近若干轮原文；状态行显示 `ctx N%`，`/status` 显示本次会话累计 token。
 - **系统提示词**：自动注入工作目录、平台与工具使用引导；若项目内含 `AGENTS.md`（项目根到工作目录逐层），其内容会一并注入并声明优先。可在配置中用 `base_instructions` 完全覆盖。
 - YAML 配置 + 环境变量覆盖（`${VAR}` 展开与 `EQUUS_*` 变量）。
 - API Key 支持三种注入方式：配置文件内联 / 密钥文件（`api_key_file`）/ 环境变量。
-- 交互式 TUI（Bubble Tea）：全屏对话、行编辑输入框、历史召回、滚动 transcript、实时状态、启动字标。
+- **交互式 TUI**（Bubble Tea，全屏）：启动字标、自绘可滚动对话区 + 滚动条、行编辑输入框（多行、命令补全）、状态行（模型 / cwd / git 分支 / ctx% / 状态）、实时思考与工具调用显示。
 - 助手输出支持 **Markdown 渲染**（标题/列表/引用/表格/行内样式），代码块用 chroma 语法高亮。
 - **Slash 命令**：`/help`、`/clear`、`/compact`、`/model`、`/status`、`/resume`、`/rename`、`/delete`、`/quit`（`/exit` 同义）。
-- **会话选择器**：`equus --resume`（不带 id）交互式挑选并恢复历史会话；`/rename`、`/delete` 管理当前会话。
+- **会话持久化**：append-only JSONL，支持 `--continue`（续最近）、`--resume <id>`、`equus --resume`（交互式选择器）；`/rename`、`/delete` 管理当前会话。
 
 ## 设计来源
 
@@ -53,11 +57,14 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 
 ### 终端界面
 
-- **TUI**：`internal/tui` 基于 Bubble Tea（`bubbles/textarea` 输入、`lipgloss` 配色）实现**全屏（alternate screen）**交互：自绘可滚动对话区 + 输入框面板 + 状态行。仅实现 Equus 当前能力范围，markdown 渲染、审批对话框、slash command、session 选择器等尚未纳入。
+- **TUI**：`internal/tui` 基于 Bubble Tea（`bubbles/textarea` 输入、`bubbles/viewport` 式自绘滚动、`lipgloss` 配色）实现**全屏（alternate screen）**交互：启动字标、可滚动对话区（含滚动条）、多行输入框（含命令补全）、状态行。助手 markdown 渲染（含 chroma 代码高亮）、审批弹窗、slash 命令、会话选择器均已纳入。
 
-### 待实现的能力
+### 已知限制
 
-会话持久化（thread/rollout）、MCP、Skill、审批（approval）、compaction、multi-agent、web fetch/search 等还在实现过程中。
+- **不做进程沙箱**：安全靠「审批 + 工作目录约束」——有意取舍（见「跨平台」）。
+- **`shell` 工具为 Unix-only**（`/bin/bash`），Windows 需适配。
+- `shift+enter` 换行不可用（Bubble Tea v1 无增强键盘协议），用 `Ctrl+J` / `Alt+Enter`。
+- 全屏 TUI 退出后不保留终端 scrollback（alternate screen 的固有代价）。
 
 ## 目录结构
 
@@ -65,14 +72,20 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 Equus/
 ├── cmd/equus/               # 进程入口
 ├── configs/                 # 配置示例
+├── docs/                    # 路线图与 git 命令备忘
 ├── internal/
-│   ├── cli/                 # Cobra 命令：chat / exec / config / version
+│   ├── cli/                 # Cobra：根命令(chat) / exec / sessions / config / version
 │   ├── config/              # YAML 加载、env 展开、校验、脱敏
-│   ├── agent/               # Agent 循环与内置工具
+│   ├── agent/               # Agent 循环、内置工具、子代理、审批
 │   │   └── patch/           # apply_patch 补丁解析与应用
+│   ├── approvals/           # 持久化的审批例外（approvals.yaml）
+│   ├── mcp/                 # MCP（stdio）客户端
+│   ├── skill/               # SKILL.md 技能发现与解析
+│   ├── threadstore/         # 会话 JSONL 持久化
 │   ├── tui/                 # Bubble Tea 全屏交互界面
 │   └── llm/                 # Provider 中立模型域
-│       └── openai/          # Chat Completions 适配器（非流式 + SSE 流式）
+│       ├── openai/          # Chat Completions / Responses 适配器
+│       └── anthropic/       # Anthropic Messages 适配器
 ├── Makefile
 └── go.mod
 ```
@@ -101,6 +114,7 @@ GOOS=windows GOARCH=amd64 go build -o equus.exe      ./cmd/equus
 > **唯一的平台例外**：`shell` 工具目前调用 `/bin/bash -lc`，仅适用于 Linux/macOS；Windows 需另行适配（改用 `cmd`/`powershell`）。除此之外无平台专属代码。
 >
 > Equus **不做进程沙箱**（seccomp / landlock / 容器等）——那会引入平台专属内核能力、破坏这里的一致性。安全靠「审批 + 工作目录约束」，属有意的取舍。
+
 ### 配置
 
 首次运行会在 `~/.equus/`（或 `$EQUUS_HOME`）生成初始配置。也可以手动放置：
@@ -198,12 +212,47 @@ equus config show
 
 > 交互模式需要 stdin 为终端；在管道/重定向环境（如 `echo ... | equus`）下会报错并退出——非交互场景请用 `equus exec`。
 
+#### MCP 与 Skill（可选）
+
+```yaml
+# 连接 stdio MCP server，其工具会以 mcp__<server>__<tool> 注册
+mcp:
+  servers:
+    my-server:
+      command: my-mcp-server
+      args: ["--flag"]
+
+# 审批策略（每类：ask / allow / deny）
+approval:
+  policy: on-request
+  shell: ask
+  write: allow
+  network: ask
+  external: ask   # MCP 工具
+
+# Markdown 渲染与语法高亮
+markdown:
+  enabled: true
+  syntax_highlight: true
+
+# 上下文自动压缩
+compaction:
+  enabled: true
+  threshold: 0.8
+  keep_recent_turns: 4
+```
+
+**Skill**：把 `SKILL.md`（YAML frontmatter 含 `name`/`description` + 正文）放到 `~/.equus/skills/<name>/SKILL.md` 或 `<项目>/.equus/skills/<name>/SKILL.md`，启动时会在系统提示词中列出。
+
 ## 已验证
 
-- `make check`（fmt/vet/test/build）全绿。
-- 真实端点（`https://llmapi.isrc.ac.cn/v1`，GLM-5.3 / DeepSeek-V4-Flash）：
-  - `equus exec` 单轮问答 ✅
-  - `equus`（TUI）多轮记忆（"我叫小明" → "我叫什么名字？"）✅
-  - `equus`（TUI）流式对话：输入、退格删除、`Ctrl-D` 退出均正常 ✅
-  - 工具往返：读取 `note.txt` → 写入 `answer.txt` ✅
-  - 流式 reasoning / 内容 / token 用量输出 ✅
+- `make check`（gofmt / go vet / go test / go build）全绿；含 `internal/llm`、`internal/cli` 等包的测试。
+- GitHub Actions CI（push/PR 跑 `make check`）。
+- 真实端点（`https://llmapi.isrc.ac.cn/v1`，DeepSeek-V4.1-Flash / Anthropic Messages 兼容端点）：
+  - `equus exec` 单轮问答、工具往返（读 → 改 → 复验）✅
+  - `equus`（TUI）多轮记忆、流式输出、行编辑、命令补全、会话选择器 ✅
+  - `apply_patch` / `glob` / `grep` / `shell`（含审批弹窗）✅
+  - **三种 wire**：OpenAI Chat Completions / Responses / Anthropic Messages ✅
+  - **MCP**（stdio）与 **子代理**（spawn/wait）端到端 ✅
+  - **web_fetch**（真实抓取公开页面）✅
+  - **Skill** 发现与按需读取 ✅

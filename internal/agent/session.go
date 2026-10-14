@@ -145,6 +145,37 @@ func (session *Session) SetRecorder(recorder Recorder) {
 	session.options.Recorder = recorder
 }
 
+// EnableSubagents registers the spawn_agent / wait_agent / close_agent tools
+// on the session. root is the working directory subagents read from; notify is
+// called when a subagent finishes (id, status, result).
+func (session *Session) EnableSubagents(root string, notify func(id, status, result string)) error {
+	session.mu.Lock()
+	registry := session.options.Registry
+	client := session.client
+	session.mu.Unlock()
+	if registry == nil {
+		return errors.New("session has no tool registry")
+	}
+	manager := newSubagentManager(client, root, func(id, status, result string) {
+		if notify != nil {
+			notify(id, status, result)
+		}
+		if status == string(subagentDone) {
+			session.appendHistory(llm.UserMessage(fmt.Sprintf("[subagent %s finished]\n%s", id, result)))
+		}
+	})
+	for _, tool := range []Tool{
+		SpawnAgentTool{manager: manager},
+		WaitAgentTool{manager: manager},
+		CloseAgentTool{manager: manager},
+	} {
+		if err := registry.register(tool); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SetBaseInstructions replaces the system prompt after construction (so the
 // caller can build it from the session's tool set).
 func (session *Session) SetBaseInstructions(instructions string) {

@@ -117,7 +117,13 @@ git add internal/skill internal/agent/instructions.go internal/agent/instruction
 git commit -m "feat(skill): discover SKILL.md skills and advertise them in the prompt"
 ```
 
-### O. multi-agent（改动 29）—— 待实现
+### O. multi-agent 子代理（改动 31）
+```bash
+git add internal/agent/subagent.go internal/agent/subagent_test.go internal/agent/builtin.go \
+        internal/agent/session.go internal/cli/chat.go
+git commit -m "feat(agent): async read-only subagents (spawn/wait/close)"
+```
+
 ### Q. web_fetch 工具（改动 28）
 ```bash
 git add internal/agent/webfetch.go internal/agent/webfetch_test.go internal/agent/approval.go \
