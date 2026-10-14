@@ -45,6 +45,12 @@ func Validate(configured Config) error {
 			problems = append(problems, fmt.Sprintf("approval.%s %q is invalid", name, mode))
 		}
 	}
+	if threshold := configured.Compaction.Threshold; threshold < 0 || threshold > 1 {
+		problems = append(problems, fmt.Sprintf("compaction.threshold %.2f must be between 0 and 1", threshold))
+	}
+	if configured.Compaction.KeepRecentTurns < 0 {
+		problems = append(problems, "compaction.keep_recent_turns must not be negative")
+	}
 	if len(problems) == 0 {
 		return nil
 	}

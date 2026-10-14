@@ -27,6 +27,7 @@ type Config struct {
 	ModelProviders map[string]ModelProviderInfo `yaml:"model_providers"`
 	Logging        LoggingConfig                `yaml:"logging"`
 	Approval       ApprovalConfig               `yaml:"approval"`
+	Compaction     CompactionConfig             `yaml:"compaction"`
 }
 
 // ModelProviderInfo describes one model provider transport. The API key can
@@ -53,6 +54,7 @@ func Default() Config {
 		ModelProviders: make(map[string]ModelProviderInfo),
 		Logging:        LoggingConfig{Level: LogLevelInfo},
 		Approval:       defaultApproval(),
+		Compaction:     defaultCompaction(),
 	}
 }
 

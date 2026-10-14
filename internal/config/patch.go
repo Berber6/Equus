@@ -20,6 +20,13 @@ type configPatch struct {
 	ModelProviders map[string]ModelProviderInfo `yaml:"model_providers"`
 	Logging        *LoggingPatch                `yaml:"logging"`
 	Approval       *ApprovalPatch               `yaml:"approval"`
+	Compaction     *CompactionPatch             `yaml:"compaction"`
+}
+
+type CompactionPatch struct {
+	Enabled         *bool    `yaml:"enabled"`
+	Threshold       *float64 `yaml:"threshold"`
+	KeepRecentTurns *int     `yaml:"keep_recent_turns"`
 }
 
 type LoggingPatch struct {
@@ -70,6 +77,17 @@ func (patch configPatch) apply(base Config) Config {
 		}
 		if patch.Approval.Write != nil {
 			base.Approval.Write = ApprovalMode(*patch.Approval.Write)
+		}
+	}
+	if patch.Compaction != nil {
+		if patch.Compaction.Enabled != nil {
+			base.Compaction.Enabled = *patch.Compaction.Enabled
+		}
+		if patch.Compaction.Threshold != nil {
+			base.Compaction.Threshold = *patch.Compaction.Threshold
+		}
+		if patch.Compaction.KeepRecentTurns != nil {
+			base.Compaction.KeepRecentTurns = *patch.Compaction.KeepRecentTurns
 		}
 	}
 	return base

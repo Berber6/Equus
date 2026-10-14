@@ -26,6 +26,7 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
   - `grep` —— 按正则搜索文件内容，返回 `path:line: text`；
   - `shell` —— 在工作目录执行 shell 命令（默认需审批）。
 - **审批策略**：高危操作（默认 `shell`）按配置决定是询问 / 放行 / 拒绝；交互模式弹窗确认（`[y]` 一次 / `[a]` 本会话 / `[n]` 拒绝），非交互模式默认拒绝。
+- **自动压缩（compaction）**：上下文接近窗口上限（默认 80%）时，自动把较早历史摘要成一段、保留最近若干轮原文；状态行显示 `ctx N%`。
 - YAML 配置 + 环境变量覆盖（`${VAR}` 展开与 `EQUUS_*` 变量）。
 - API Key 支持三种注入方式：配置文件内联 / 密钥文件（`api_key_file`）/ 环境变量。
 - 交互式 TUI（Bubble Tea）：全屏对话、行编辑输入框、历史召回、滚动 transcript、实时状态。

@@ -162,10 +162,16 @@ func buildSession(configured config.Config, workingDir string) (*agent.Session, 
 		return nil, "", err
 	}
 	approval := configured.Approval
+	compaction := configured.Compaction
 	session, err := agent.NewSession(client, agent.Options{
 		Registry: registry,
 		ApprovalMode: func(category string) agent.ApprovalMode {
 			return agent.ApprovalMode(approval.EffectiveMode(category))
+		},
+		Compaction: agent.CompactionOptions{
+			Enabled:         compaction.Enabled,
+			Threshold:       compaction.Threshold,
+			KeepRecentTurns: compaction.KeepRecentTurns,
 		},
 	})
 	if err != nil {

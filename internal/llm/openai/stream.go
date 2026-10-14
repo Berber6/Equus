@@ -52,9 +52,10 @@ func (stream *eventStream) Recv() (llm.StreamChunk, error) {
 		if decodeErr != nil {
 			return llm.StreamChunk{}, decodeErr
 		}
-		if chunk.Completed() {
-			stream.finished = true
-		}
+		// Note: with stream_options.include_usage, the terminal usage chunk is
+		// sent AFTER the finish_reason chunk, so we must not stop on a chunk
+		// merely because it carries a finish reason. The stream ends at [DONE]
+		// or EOF (handled above).
 		return chunk, nil
 	}
 }

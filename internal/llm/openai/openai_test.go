@@ -184,3 +184,69 @@ func TestRequestIncludesSystemAndTools(t *testing.T) {
 		t.Fatalf("tool = %v", tool)
 	}
 }
+
+// TestStreamUsageAfterFinishChunk ensures the terminal usage chunk (sent
+// after the finish_reason chunk when stream_options.include_usage is set) is
+// delivered to the caller — the agent relies on it for token accounting.
+func TestStreamUsageAfterFinishChunk(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		flusher := writer.(http.Flusher)
+		for _, event := range []string{
+			`data: {"id":"c1","choices":[{"index":0,"delta":{"content":"hi"}}]}`,
+			`data: {"id":"c1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+			`data: {"id":"c1","choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":31,"completion_tokens":5,"total_tokens":36}}`,
+			`data: [DONE]`,
+		} {
+			writer.Write([]byte(event + "\n\n"))
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{APIKey: "sk-test", BaseURL: server.URL, Model: "glm-5.3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := client.Stream(context.Background(), llm.NewRequest("glm-5.3", []llm.ResponseItem{llm.UserMessage("hi")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	var usage *llm.TokenUsage
+	for {
+		chunk, err := stream.Recv()
+		if err != nil {
+			break
+		}
+		if chunk.TokenUsage != nil {
+			usage = chunk.TokenUsage
+		}
+	}
+	if usage == nil || usage.InputTokens != 31 {
+		t.Fatalf("usage after finish chunk missed: %+v", usage)
+	}
+}
+
+// TestStreamRequestsUsage verifies include_usage is set on streamed requests.
+func TestStreamRequestsUsage(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		json.NewDecoder(request.Body).Decode(&body)
+		writer.Header().Set("Content-Type", "text/event-stream")
+		writer.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client, _ := NewClient(Options{APIKey: "sk-test", BaseURL: server.URL, Model: "glm-5.3"})
+	stream, err := client.Stream(context.Background(), llm.NewRequest("glm-5.3", []llm.ResponseItem{llm.UserMessage("hi")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Close()
+	opts, ok := body["stream_options"].(map[string]any)
+	if !ok || opts["include_usage"] != true {
+		t.Fatalf("stream_options.include_usage missing: %v", body["stream_options"])
+	}
+}

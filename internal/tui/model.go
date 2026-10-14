@@ -68,6 +68,11 @@ type Model struct {
 	// pending holds the approval request awaiting a keypress, if any.
 	pending *approvalPrompt
 
+	// ctxUsed / ctxWindow track the last request's prompt size vs the model's
+	// context window, for the status line percentage.
+	ctxUsed   int64
+	ctxWindow int64
+
 	version string
 	model   string
 	cwd     string

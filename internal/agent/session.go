@@ -33,6 +33,8 @@ type Options struct {
 	// Recorder, when set, is notified of every conversation item appended to
 	// history (for persisting the session).
 	Recorder Recorder
+	// Compaction controls automatic context compaction.
+	Compaction CompactionOptions
 }
 
 // Recorder receives conversation items as they are appended to history.
@@ -59,6 +61,7 @@ const (
 	EventUsage          EventKind = "usage"
 	EventError          EventKind = "error"
 	EventApproval       EventKind = "approval"
+	EventCompaction     EventKind = "compaction"
 )
 
 // Session keeps conversation history and drives one agent turn at a time.
@@ -71,6 +74,11 @@ type Session struct {
 	// approved caches categories granted "for session" so later identical
 	// categories are not re-prompted.
 	approved map[approvalKind]bool
+	// contextWindow is the model's context size; lastPromptTokens is the most
+	// recent request's prompt size (0 until measured).
+	contextWindow    int64
+	lastPromptTokens int64
+	compaction       CompactionOptions
 }
 
 // NewSession creates a session bound to a model client and tool registry.
@@ -90,6 +98,10 @@ func NewSession(client llm.Client, options Options) (*Session, error) {
 	if roundTrips <= 0 {
 		roundTrips = maxToolRoundTrips
 	}
+	compaction := options.Compaction
+	if compaction.Threshold <= 0 {
+		compaction = defaultCompactionOptions()
+	}
 	return &Session{
 		client: client,
 		options: Options{
@@ -99,8 +111,11 @@ func NewSession(client llm.Client, options Options) (*Session, error) {
 			Approver:         options.Approver,
 			ApprovalMode:     options.ApprovalMode,
 			Recorder:         options.Recorder,
+			Compaction:       compaction,
 		},
-		approved: make(map[approvalKind]bool),
+		approved:      make(map[approvalKind]bool),
+		contextWindow: client.Model().ContextWindow,
+		compaction:    compaction,
 	}, nil
 }
 
@@ -126,6 +141,28 @@ func (session *Session) Restore(items []llm.ResponseItem) {
 	cloned := make([]llm.ResponseItem, len(items))
 	copy(cloned, items)
 	session.history = cloned
+}
+
+// recordUsage stores the most recent request's prompt size for compaction.
+func (session *Session) recordUsage(usage llm.TokenUsage) {
+	session.mu.Lock()
+	session.lastPromptTokens = usage.InputTokens
+	session.mu.Unlock()
+}
+
+// ContextUsage reports the last measured prompt size and the model's context
+// window (used to display a context percentage).
+func (session *Session) ContextUsage() (used, window int64) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.lastPromptTokens, session.contextWindow
+}
+
+// ContextWindow reports the model's context window size.
+func (session *Session) ContextWindow() int64 {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.contextWindow
 }
 
 // History returns a defensive copy of the conversation so far.
@@ -158,6 +195,8 @@ func (session *Session) Ask(ctx context.Context, prompt string, sink func(Event)
 	if sink == nil {
 		sink = func(Event) {}
 	}
+	// Compact before appending the new turn if the context is nearly full.
+	session.maybeCompact(ctx, sink)
 	session.appendHistory(llm.UserMessage(prompt))
 
 	var builder strings.Builder
@@ -212,6 +251,7 @@ func (session *Session) sample(ctx context.Context, sink func(Event)) (llm.Respo
 			return llm.ResponseItem{}, errors.Join(err, completeErr)
 		}
 		if response.TokenUsage.TotalTokens > 0 {
+			session.recordUsage(response.TokenUsage)
 			sink(Event{Kind: EventUsage, Usage: &response.TokenUsage})
 		}
 		return response.Message, nil
@@ -239,6 +279,7 @@ func (session *Session) sample(ctx context.Context, sink func(Event)) (llm.Respo
 		}
 		if chunk.TokenUsage != nil {
 			usage := *chunk.TokenUsage
+			session.recordUsage(usage)
 			sink(Event{Kind: EventUsage, Usage: &usage})
 		}
 		for _, call := range chunk.ToolCalls {

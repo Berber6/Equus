@@ -226,6 +226,7 @@ func (m *Model) handleEvent(event agent.Event) {
 		m.appendTranscript(m.toolResultEntry(event.Tool, event.Text)...)
 	case agent.EventUsage:
 		if event.Usage != nil {
+			m.ctxUsed = event.Usage.InputTokens
 			m.appendTranscript(m.usageEntry(usageLine(event.Usage))...)
 		}
 	case agent.EventError:
@@ -233,6 +234,8 @@ func (m *Model) handleEvent(event agent.Event) {
 	case agent.EventApproval:
 		// The prompt itself is drawn from m.pending (set via approvalMsg).
 		m.status = "awaiting approval"
+	case agent.EventCompaction:
+		m.appendTranscript(m.palette.dim().Render("· " + event.Text))
 	}
 }
 

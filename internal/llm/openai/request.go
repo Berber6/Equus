@@ -11,10 +11,17 @@ import (
 
 // chatRequest is the wire representation of a Chat Completions call.
 type chatRequest struct {
-	Model    string        `json:"model"`
-	Stream   bool          `json:"stream,omitempty"`
-	Messages []chatMessage `json:"messages"`
-	Tools    []chatTool    `json:"tools,omitempty"`
+	Model         string         `json:"model"`
+	Stream        bool           `json:"stream,omitempty"`
+	Messages      []chatMessage  `json:"messages"`
+	Tools         []chatTool     `json:"tools,omitempty"`
+	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+}
+
+// streamOptions asks the endpoint to include a usage chunk when streaming, so
+// token accounting (and compaction) works for streamed turns too.
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type chatMessage struct {
@@ -72,7 +79,11 @@ func (client *Client) newRequestBody(request llm.Request, stream bool) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(chatRequest{Model: model, Stream: stream, Messages: messages, Tools: tools})
+	payload := chatRequest{Model: model, Stream: stream, Messages: messages, Tools: tools}
+	if stream {
+		payload.StreamOptions = &streamOptions{IncludeUsage: true}
+	}
+	return json.Marshal(payload)
 }
 
 func convertMessage(message llm.ResponseItem) (chatMessage, error) {

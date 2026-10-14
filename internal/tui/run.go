@@ -61,6 +61,10 @@ func Run(ctx context.Context, options RunOptions) error {
 	if err != nil {
 		return err
 	}
+	model.ctxWindow = options.Session.ContextWindow()
+	if used, _ := options.Session.ContextUsage(); used > 0 {
+		model.ctxUsed = used
+	}
 	model.appendTranscript(model.banner(), "")
 	if len(options.History) > 0 {
 		model.appendTranscript(renderHistory(model, options.History)...)
