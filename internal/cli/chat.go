@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/Godric-W/Equus/internal/agent"
+	"github.com/Godric-W/Equus/internal/approvals"
 	"github.com/Godric-W/Equus/internal/config"
 	"github.com/Godric-W/Equus/internal/llm"
 	"github.com/Godric-W/Equus/internal/llm/anthropic"
@@ -78,13 +80,15 @@ func runChat(ctx context.Context, options chatOptions, stdin io.Reader, stdout, 
 	}
 
 	return tui.Run(ctx, tui.RunOptions{
-		Session: session,
-		History: history,
-		Input:   stdin,
-		Output:  stdout,
-		Version: Version,
-		Model:   model,
-		CWD:     workingDir,
+		Session:         session,
+		History:         history,
+		Input:           stdin,
+		Output:          stdout,
+		Version:         Version,
+		Model:           model,
+		CWD:             workingDir,
+		Markdown:        configured.Markdown.Enabled,
+		SyntaxHighlight: configured.Markdown.SyntaxHighlight,
 	})
 }
 
@@ -165,6 +169,33 @@ func newModelClient(configured config.Config, provider config.ModelProviderInfo)
 	}
 }
 
+// effectiveShellAllowPrefixes merges the configured prefixes with those the
+// user granted permanently (stored under the Equus home directory).
+func effectiveShellAllowPrefixes(approval config.ApprovalConfig, home string) []string {
+	merged := append([]string(nil), approval.ShellAllowPrefixes...)
+	state, err := approvals.New(home).Load()
+	if err == nil {
+		merged = append(merged, state.ShellAllowPrefixes...)
+	}
+	return merged
+}
+
+// prefixAllowed reports whether command matches one of the allow prefixes on a
+// word boundary.
+func prefixAllowed(prefixes []string, command string) bool {
+	command = strings.TrimSpace(command)
+	for _, prefix := range prefixes {
+		prefix = strings.TrimSpace(prefix)
+		if prefix == "" {
+			continue
+		}
+		if command == prefix || strings.HasPrefix(command, prefix+" ") {
+			return true
+		}
+	}
+	return false
+}
+
 // buildSession composes the model client and agent session from config,
 // returning the session plus the model name.
 func buildSession(configured config.Config, workingDir string) (*agent.Session, string, error) {
@@ -182,10 +213,24 @@ func buildSession(configured config.Config, workingDir string) (*agent.Session, 
 	}
 	approval := configured.Approval
 	compaction := configured.Compaction
+	allowlist := effectiveShellAllowPrefixes(approval, equusHome())
 	session, err := agent.NewSession(client, agent.Options{
 		Registry: registry,
 		ApprovalMode: func(category string) agent.ApprovalMode {
 			return agent.ApprovalMode(approval.EffectiveMode(category))
+		},
+		AutoApprove: func(category, summary string) bool {
+			if category != "shell" {
+				return false
+			}
+			return prefixAllowed(allowlist, summary)
+		},
+		OnPermanentGrant: func(category, summary string) error {
+			// Only shell commands are recorded as exact prefixes.
+			if category == "shell" {
+				return approvals.New(equusHome()).AddShellPrefix(summary)
+			}
+			return nil
 		},
 		Compaction: agent.CompactionOptions{
 			Enabled:         compaction.Enabled,

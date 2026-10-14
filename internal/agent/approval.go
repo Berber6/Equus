@@ -13,6 +13,9 @@ const (
 	ApprovalOnce
 	// ApprovalSession allows matching operations until the session ends.
 	ApprovalSession
+	// ApprovalPermanent allows the operation and records it for future
+	// sessions (via Options.OnPermanentGrant).
+	ApprovalPermanent
 )
 
 // ApprovalMode is the policy for a tool category.

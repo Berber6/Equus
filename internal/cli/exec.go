@@ -12,19 +12,21 @@ import (
 )
 
 func newExecCommand(stdout, stderr io.Writer) *cobra.Command {
+	var allowShell bool
 	command := &cobra.Command{
 		Use:   "exec PROMPT",
 		Short: "Run one prompt through the agent and print the answer",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(command *cobra.Command, arguments []string) error {
 			prompt := strings.Join(arguments, " ")
-			return runExec(command.Context(), prompt, stdout, stderr)
+			return runExec(command.Context(), prompt, allowShell, stdout, stderr)
 		},
 	}
+	command.Flags().BoolVar(&allowShell, "allow-shell", false, "allow shell commands without prompting (non-interactive)")
 	return command
 }
 
-func runExec(ctx context.Context, prompt string, stdout, stderr io.Writer) error {
+func runExec(ctx context.Context, prompt string, allowShell bool, stdout, stderr io.Writer) error {
 	configured, err := loadConfig()
 	if err != nil {
 		return err
@@ -37,10 +39,15 @@ func runExec(ctx context.Context, prompt string, stdout, stderr io.Writer) error
 	if err != nil {
 		return err
 	}
-	// Non-interactive: approvals have nowhere to go, so deny (the session
-	// reports the denial to the model, which can adapt).
+	// Non-interactive: approvals have nowhere to go. By default deny (the
+	// session reports the denial to the model, which can adapt); --allow-shell
+	// opts into running commands unattended.
+	decision := agent.ApprovalDenied
+	if allowShell {
+		decision = agent.ApprovalSession
+	}
 	session.SetApprover(func(context.Context, agent.ApprovalRequest) (agent.ApprovalDecision, error) {
-		return agent.ApprovalDenied, nil
+		return decision, nil
 	})
 	answer, err := session.Ask(ctx, prompt, chatEventSink(stdout))
 	if err != nil && answer == "" {

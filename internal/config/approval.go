@@ -1,5 +1,7 @@
 package config
 
+import "strings"
+
 // ApprovalPolicy is the global approval policy, modeled on the reference
 // agent's approval_policy setting.
 type ApprovalPolicy string
@@ -31,6 +33,26 @@ type ApprovalConfig struct {
 	Policy ApprovalPolicy `yaml:"policy"`
 	Shell  ApprovalMode   `yaml:"shell"`
 	Write  ApprovalMode   `yaml:"write"`
+	// ShellAllowPrefixes lists command prefixes that run without prompting.
+	ShellAllowPrefixes []string `yaml:"shell_allow_prefixes"`
+}
+
+// AllowsShellPrefix reports whether a shell command matches one of the allowed
+// prefixes. A prefix matches on a word boundary: the command must equal the
+// prefix or continue with whitespace, so "git status" does not allow
+// "git statusfoo".
+func (approval ApprovalConfig) AllowsShellPrefix(command string) bool {
+	command = strings.TrimSpace(command)
+	for _, prefix := range approval.ShellAllowPrefixes {
+		prefix = strings.TrimSpace(prefix)
+		if prefix == "" {
+			continue
+		}
+		if command == prefix || strings.HasPrefix(command, prefix+" ") {
+			return true
+		}
+	}
+	return false
 }
 
 // EffectiveMode resolves the decision for a category, honoring the global
@@ -58,11 +80,14 @@ func (approval ApprovalConfig) EffectiveMode(category string) ApprovalMode {
 }
 
 // defaultApproval returns the built-in approval defaults: prompt for shell,
-// allow file writes.
+// allow file writes, and auto-allow a conservative set of read-only commands.
 func defaultApproval() ApprovalConfig {
 	return ApprovalConfig{
 		Policy: ApprovalPolicyOnRequest,
 		Shell:  ApprovalModeAsk,
 		Write:  ApprovalModeAllow,
+		ShellAllowPrefixes: []string{
+			"ls", "cat", "pwd", "echo", "git status", "git diff", "go build", "go test",
+		},
 	}
 }

@@ -191,3 +191,46 @@ func mustCall(t *testing.T, name, arguments string) llm.ToolCall {
 	t.Helper()
 	return llm.ToolCall{ID: "call_1", Name: name, Arguments: json.RawMessage(arguments)}
 }
+
+func TestAutoApproveSkipsPrompt(t *testing.T) {
+	registry, _ := NewDefaultRegistry(t.TempDir())
+	approverCalls := 0
+	session, _ := NewSession(&fakeClient{}, Options{
+		Registry:     registry,
+		ApprovalMode: func(string) ApprovalMode { return ApprovalModeAsk },
+		AutoApprove: func(category, summary string) bool {
+			return category == "shell" && summary == "echo hi"
+		},
+		Approver: func(context.Context, ApprovalRequest) (ApprovalDecision, error) {
+			approverCalls++
+			return ApprovalDenied, nil
+		},
+	})
+	result := session.runTool(context.Background(), mustCall(t, "shell", `{"command":"echo hi"}`), func(Event) {})
+	if approverCalls != 0 {
+		t.Fatalf("approver should be skipped for allowed prefix, called %d times", approverCalls)
+	}
+	if !strings.Contains(result, "hi") {
+		t.Fatalf("result = %q", result)
+	}
+}
+
+func TestPermanentGrantRecorded(t *testing.T) {
+	registry, _ := NewDefaultRegistry(t.TempDir())
+	var granted []string
+	session, _ := NewSession(&fakeClient{}, Options{
+		Registry:     registry,
+		ApprovalMode: func(string) ApprovalMode { return ApprovalModeAsk },
+		Approver: func(context.Context, ApprovalRequest) (ApprovalDecision, error) {
+			return ApprovalPermanent, nil
+		},
+		OnPermanentGrant: func(category, summary string) error {
+			granted = append(granted, category+":"+summary)
+			return nil
+		},
+	})
+	session.runTool(context.Background(), mustCall(t, "shell", `{"command":"rm -rf /tmp/x"}`), func(Event) {})
+	if len(granted) != 1 || granted[0] != "shell:rm -rf /tmp/x" {
+		t.Fatalf("granted = %v", granted)
+	}
+}
