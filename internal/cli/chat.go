@@ -14,6 +14,7 @@ import (
 	"github.com/Godric-W/Equus/internal/llm"
 	"github.com/Godric-W/Equus/internal/llm/anthropic"
 	"github.com/Godric-W/Equus/internal/llm/openai"
+	"github.com/Godric-W/Equus/internal/skill"
 	"github.com/Godric-W/Equus/internal/threadstore"
 	"github.com/Godric-W/Equus/internal/tui"
 	"github.com/spf13/cobra"
@@ -278,6 +279,7 @@ func buildSession(configured config.Config, workingDir string) (*agent.Session, 
 		Platform:    runtime.GOOS + "/" + runtime.GOARCH,
 		Tools:       session.ToolNames(),
 		ProjectDocs: agent.DiscoverAgentsDocs(workingDir),
+		Skills:      skill.Discover(equusHome(), workingDir),
 		Override:    configured.BaseInstructions,
 	}))
 	if err != nil {

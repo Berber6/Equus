@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Godric-W/Equus/internal/skill"
 )
 
 func TestBuildBaseInstructionsIncludesEnvironment(t *testing.T) {
@@ -72,5 +74,15 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuildBaseInstructionsIncludesSkills(t *testing.T) {
+	got := BuildBaseInstructions(InstructionsInput{
+		CWD:    "/w",
+		Skills: []skill.Skill{{Name: "deploy", Description: "how to deploy", Path: "/w/skills/deploy/SKILL.md"}},
+	})
+	if !strings.Contains(got, "Available skills") || !strings.Contains(got, "deploy: how to deploy") {
+		t.Fatalf("skills not injected:\n%s", got)
 	}
 }

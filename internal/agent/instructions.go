@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Godric-W/Equus/internal/skill"
 )
 
 // maxAgentsDocBytes caps how much of a single AGENTS.md is injected.
@@ -19,6 +21,8 @@ type InstructionsInput struct {
 	Tools []string
 	// ProjectDocs are AGENTS.md contents (parent first).
 	ProjectDocs []string
+	// Skills lists discovered skills advertised to the model.
+	Skills []skill.Skill
 	// Override, when non-empty, replaces the whole default prompt.
 	Override string
 }
@@ -62,6 +66,20 @@ func BuildBaseInstructions(input InstructionsInput) string {
 		for _, doc := range input.ProjectDocs {
 			b.WriteString(strings.TrimSpace(doc))
 			b.WriteString("\n\n")
+		}
+	}
+	if len(input.Skills) > 0 {
+		b.WriteString("\n## Available skills\n")
+		b.WriteString("Reusable instructions you can read with read_file when relevant:\n")
+		for _, s := range input.Skills {
+			line := "- " + s.Name
+			if s.Description != "" {
+				line += ": " + s.Description
+			}
+			if s.Path != "" {
+				line += " (" + s.Path + ")"
+			}
+			b.WriteString(line + "\n")
 		}
 	}
 	return strings.TrimSpace(b.String())
