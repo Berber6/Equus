@@ -15,12 +15,13 @@ func errEnvMissing(name string) error {
 
 // configPatch is the optional overlay decoded from the YAML file.
 type configPatch struct {
-	Model          *string                      `yaml:"model"`
-	ModelProvider  *string                      `yaml:"model_provider"`
-	ModelProviders map[string]ModelProviderInfo `yaml:"model_providers"`
-	Logging        *LoggingPatch                `yaml:"logging"`
-	Approval       *ApprovalPatch               `yaml:"approval"`
-	Compaction     *CompactionPatch             `yaml:"compaction"`
+	Model            *string                      `yaml:"model"`
+	ModelProvider    *string                      `yaml:"model_provider"`
+	ModelProviders   map[string]ModelProviderInfo `yaml:"model_providers"`
+	Logging          *LoggingPatch                `yaml:"logging"`
+	Approval         *ApprovalPatch               `yaml:"approval"`
+	Compaction       *CompactionPatch             `yaml:"compaction"`
+	BaseInstructions *string                      `yaml:"base_instructions"`
 }
 
 type CompactionPatch struct {
@@ -89,6 +90,9 @@ func (patch configPatch) apply(base Config) Config {
 		if patch.Compaction.KeepRecentTurns != nil {
 			base.Compaction.KeepRecentTurns = *patch.Compaction.KeepRecentTurns
 		}
+	}
+	if patch.BaseInstructions != nil {
+		base.BaseInstructions = *patch.BaseInstructions
 	}
 	return base
 }

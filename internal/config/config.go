@@ -28,6 +28,8 @@ type Config struct {
 	Logging        LoggingConfig                `yaml:"logging"`
 	Approval       ApprovalConfig               `yaml:"approval"`
 	Compaction     CompactionConfig             `yaml:"compaction"`
+	// BaseInstructions overrides the built-in system prompt when non-empty.
+	BaseInstructions string `yaml:"base_instructions"`
 }
 
 // ModelProviderInfo describes one model provider transport. The API key can

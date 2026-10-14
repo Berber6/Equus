@@ -134,6 +134,17 @@ func (session *Session) SetRecorder(recorder Recorder) {
 	session.options.Recorder = recorder
 }
 
+// SetBaseInstructions replaces the system prompt after construction (so the
+// caller can build it from the session's tool set).
+func (session *Session) SetBaseInstructions(instructions string) {
+	if strings.TrimSpace(instructions) == "" {
+		return
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.options.BaseInstructions = instructions
+}
+
 // Restore replaces the conversation history (used when resuming a session).
 func (session *Session) Restore(items []llm.ResponseItem) {
 	session.mu.Lock()
@@ -163,6 +174,14 @@ func (session *Session) ContextWindow() int64 {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	return session.contextWindow
+}
+
+// ToolNames reports the names of the tools offered to the model.
+func (session *Session) ToolNames() []string {
+	if session.options.Registry == nil {
+		return nil
+	}
+	return session.options.Registry.names()
 }
 
 // History returns a defensive copy of the conversation so far.

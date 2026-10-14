@@ -45,6 +45,15 @@ func (registry *toolRegistry) lookup(name string) (Tool, bool) {
 	return nil, false
 }
 
+// names reports the registered tool names in registration order.
+func (registry *toolRegistry) names() []string {
+	names := make([]string, 0, len(registry.tools))
+	for _, tool := range registry.tools {
+		names = append(names, tool.Name())
+	}
+	return names
+}
+
 func (registry *toolRegistry) specs() []toolSpecView {
 	views := make([]toolSpecView, 0, len(registry.tools))
 	for _, tool := range registry.tools {

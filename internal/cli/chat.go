@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 
 	"github.com/Godric-W/Equus/internal/agent"
 	"github.com/Godric-W/Equus/internal/config"
@@ -174,6 +175,16 @@ func buildSession(configured config.Config, workingDir string) (*agent.Session, 
 			KeepRecentTurns: compaction.KeepRecentTurns,
 		},
 	})
+	if err != nil {
+		return nil, "", err
+	}
+	session.SetBaseInstructions(agent.BuildBaseInstructions(agent.InstructionsInput{
+		CWD:         workingDir,
+		Platform:    runtime.GOOS + "/" + runtime.GOARCH,
+		Tools:       session.ToolNames(),
+		ProjectDocs: agent.DiscoverAgentsDocs(workingDir),
+		Override:    configured.BaseInstructions,
+	}))
 	if err != nil {
 		return nil, "", err
 	}
