@@ -290,6 +290,9 @@ func (m *Model) handleEvent(event agent.Event) {
 	case agent.EventUsage:
 		if event.Usage != nil {
 			m.ctxUsed = event.Usage.InputTokens
+			m.usageTotals.InputTokens += event.Usage.InputTokens
+			m.usageTotals.OutputTokens += event.Usage.OutputTokens
+			m.usageTotals.TotalTokens += event.Usage.TotalTokens
 			m.appendTranscript(m.usageEntry(usageLine(event.Usage))...)
 		}
 	case agent.EventError:

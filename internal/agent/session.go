@@ -86,6 +86,8 @@ type Session struct {
 	contextWindow    int64
 	lastPromptTokens int64
 	compaction       CompactionOptions
+	// usageTotals accumulates token usage across all requests this session.
+	usageTotals llm.TokenUsage
 }
 
 // NewSession creates a session bound to a model client and tool registry.
@@ -212,11 +214,22 @@ func (session *Session) Compact(ctx context.Context, sink func(Event)) bool {
 	return true
 }
 
-// recordUsage stores the most recent request's prompt size for compaction.
+// recordUsage stores the most recent request's prompt size for compaction and
+// accumulates session-wide token totals.
 func (session *Session) recordUsage(usage llm.TokenUsage) {
 	session.mu.Lock()
 	session.lastPromptTokens = usage.InputTokens
+	session.usageTotals.InputTokens += usage.InputTokens
+	session.usageTotals.OutputTokens += usage.OutputTokens
+	session.usageTotals.TotalTokens += usage.TotalTokens
 	session.mu.Unlock()
+}
+
+// UsageTotals reports the cumulative token usage for this session.
+func (session *Session) UsageTotals() llm.TokenUsage {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.usageTotals
 }
 
 // ContextUsage reports the last measured prompt size and the model's context

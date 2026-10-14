@@ -120,9 +120,14 @@ func (m Model) statusLines() []string {
 		m.palette.dim().Render("directory: ") + m.cwd,
 		m.palette.dim().Render("version:   ") + m.version,
 	}
+	if m.branch != "" {
+		lines = append(lines, m.palette.dim().Render("branch:    ")+m.branch)
+	}
 	if percent, ok := m.contextPercent(); ok {
 		lines = append(lines, m.palette.dim().Render("context:   ")+fmt.Sprintf("%d%% used", percent))
 	}
+	lines = append(lines, m.palette.dim().Render("tokens:    ")+fmt.Sprintf("in=%d out=%d total=%d (this session)",
+		m.usageTotals.InputTokens, m.usageTotals.OutputTokens, m.usageTotals.TotalTokens))
 	if names := m.session.ToolNames(); len(names) > 0 {
 		lines = append(lines, m.palette.dim().Render("tools:     ")+strings.Join(names, ", "))
 	}

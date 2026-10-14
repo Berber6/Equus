@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Godric-W/Equus/internal/agent"
 	"github.com/Godric-W/Equus/internal/llm"
 )
 
@@ -116,5 +117,21 @@ func TestEnterDispatchesCommand(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(model.transcript, "\n"), "/help") {
 		t.Fatalf("help not shown: %v", model.transcript)
+	}
+}
+
+func TestStatusShowsTokenTotals(t *testing.T) {
+	model, _ := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
+	model.resize(80, 24)
+	updated, _ := model.Update(eventMsg{event: agent.Event{Kind: agent.EventUsage, Usage: &llm.TokenUsage{InputTokens: 12, OutputTokens: 4, TotalTokens: 16}}})
+	model = updated.(Model)
+	updated, _ = model.Update(eventMsg{event: agent.Event{Kind: agent.EventUsage, Usage: &llm.TokenUsage{InputTokens: 8, OutputTokens: 2, TotalTokens: 10}}})
+	model = updated.(Model)
+	if model.usageTotals.TotalTokens != 26 {
+		t.Fatalf("totals = %+v", model.usageTotals)
+	}
+	joined := strings.Join(model.statusLines(), "\n")
+	if !strings.Contains(stripANSI(joined), "tokens:") || !strings.Contains(stripANSI(joined), "total=26") {
+		t.Fatalf("status missing token totals: %q", stripANSI(joined))
 	}
 }

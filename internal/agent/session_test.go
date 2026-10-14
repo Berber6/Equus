@@ -247,3 +247,16 @@ func TestRecorderNotified(t *testing.T) {
 type recordingRecorder struct{ items []llm.ResponseItem }
 
 func (r *recordingRecorder) Record(item llm.ResponseItem) { r.items = append(r.items, item) }
+
+func TestUsageTotalsAccumulate(t *testing.T) {
+	session, err := NewSession(&fakeClient{}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.recordUsage(llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15})
+	session.recordUsage(llm.TokenUsage{InputTokens: 20, OutputTokens: 8, TotalTokens: 28})
+	got := session.UsageTotals()
+	if got.InputTokens != 30 || got.OutputTokens != 13 || got.TotalTokens != 43 {
+		t.Fatalf("totals = %+v", got)
+	}
+}

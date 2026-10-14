@@ -90,6 +90,8 @@ type Model struct {
 	// context window, for the status line percentage.
 	ctxUsed   int64
 	ctxWindow int64
+	// usageTotals accumulates token usage across this session.
+	usageTotals llm.TokenUsage
 
 	version string
 	model   string
