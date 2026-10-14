@@ -22,6 +22,7 @@ type configPatch struct {
 	Approval         *ApprovalPatch               `yaml:"approval"`
 	Compaction       *CompactionPatch             `yaml:"compaction"`
 	Markdown         *MarkdownPatch               `yaml:"markdown"`
+	MCP              *MCPConfig                   `yaml:"mcp"`
 	BaseInstructions *string                      `yaml:"base_instructions"`
 }
 
@@ -42,10 +43,11 @@ type LoggingPatch struct {
 }
 
 type ApprovalPatch struct {
-	Policy  *string `yaml:"policy"`
-	Shell   *string `yaml:"shell"`
-	Write   *string `yaml:"write"`
-	Network *string `yaml:"network"`
+	Policy   *string `yaml:"policy"`
+	Shell    *string `yaml:"shell"`
+	Write    *string `yaml:"write"`
+	Network  *string `yaml:"network"`
+	External *string `yaml:"external"`
 }
 
 func (patch configPatch) apply(base Config) Config {
@@ -89,6 +91,9 @@ func (patch configPatch) apply(base Config) Config {
 		if patch.Approval.Network != nil {
 			base.Approval.Network = ApprovalMode(*patch.Approval.Network)
 		}
+		if patch.Approval.External != nil {
+			base.Approval.External = ApprovalMode(*patch.Approval.External)
+		}
 	}
 	if patch.Compaction != nil {
 		if patch.Compaction.Enabled != nil {
@@ -108,6 +113,9 @@ func (patch configPatch) apply(base Config) Config {
 		if patch.Markdown.SyntaxHighlight != nil {
 			base.Markdown.SyntaxHighlight = *patch.Markdown.SyntaxHighlight
 		}
+	}
+	if patch.MCP != nil {
+		base.MCP = *patch.MCP
 	}
 	if patch.BaseInstructions != nil {
 		base.BaseInstructions = *patch.BaseInstructions

@@ -43,7 +43,7 @@ func Validate(configured Config) error {
 	default:
 		problems = append(problems, fmt.Sprintf("approval.policy %q is invalid", configured.Approval.Policy))
 	}
-	for name, mode := range map[string]ApprovalMode{"shell": configured.Approval.Shell, "write": configured.Approval.Write, "network": configured.Approval.Network} {
+	for name, mode := range map[string]ApprovalMode{"shell": configured.Approval.Shell, "write": configured.Approval.Write, "network": configured.Approval.Network, "external": configured.Approval.External} {
 		switch mode {
 		case "", ApprovalModeAsk, ApprovalModeAllow, ApprovalModeDeny:
 		default:

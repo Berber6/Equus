@@ -31,6 +31,7 @@ type Config struct {
 	Approval       ApprovalConfig               `yaml:"approval"`
 	Compaction     CompactionConfig             `yaml:"compaction"`
 	Markdown       MarkdownConfig               `yaml:"markdown"`
+	MCP            MCPConfig                    `yaml:"mcp"`
 	// BaseInstructions overrides the built-in system prompt when non-empty.
 	BaseInstructions string `yaml:"base_instructions"`
 }
@@ -63,6 +64,7 @@ func Default() Config {
 		Approval:       defaultApproval(),
 		Compaction:     defaultCompaction(),
 		Markdown:       defaultMarkdown(),
+		MCP:            defaultMCP(),
 	}
 }
 

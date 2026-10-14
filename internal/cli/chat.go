@@ -70,6 +70,12 @@ func runChat(ctx context.Context, options chatOptions, stdin io.Reader, stdout, 
 		return err
 	}
 
+	// Connect configured MCP servers and register their tools. A server that
+	// fails to connect is skipped (a warning goes to stderr) rather than
+	// aborting the CLI.
+	mcpSessions := connectMCPServers(ctx, configured, session, stderr)
+	defer closeMCPServers(mcpSessions)
+
 	store := threadstore.New(sessionsDir())
 	var history []llm.ResponseItem
 	var pickerSessions []threadstore.Meta

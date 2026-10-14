@@ -39,6 +39,8 @@ func runExec(ctx context.Context, prompt string, allowShell bool, stdout, stderr
 	if err != nil {
 		return err
 	}
+	// Register MCP tools for the one-shot run as well.
+	defer closeMCPServers(connectMCPServers(ctx, configured, session, stderr))
 	// Non-interactive: approvals have nowhere to go. By default deny (the
 	// session reports the denial to the model, which can adapt); --allow-shell
 	// opts into running commands unattended.

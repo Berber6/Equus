@@ -79,7 +79,7 @@ Equus/
 
 ## 构建与运行
 
-需要 Go 1.24 或更高版本。
+需要 Go 1.25 或更高版本。
 
 ```bash
 make build    # 产物: bin/equus
