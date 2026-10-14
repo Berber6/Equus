@@ -26,6 +26,7 @@ type Config struct {
 	ModelProvider  string                       `yaml:"model_provider"`
 	ModelProviders map[string]ModelProviderInfo `yaml:"model_providers"`
 	Logging        LoggingConfig                `yaml:"logging"`
+	Approval       ApprovalConfig               `yaml:"approval"`
 }
 
 // ModelProviderInfo describes one model provider transport. The API key can
@@ -51,6 +52,7 @@ func Default() Config {
 		ModelProvider:  "openai",
 		ModelProviders: make(map[string]ModelProviderInfo),
 		Logging:        LoggingConfig{Level: LogLevelInfo},
+		Approval:       defaultApproval(),
 	}
 }
 

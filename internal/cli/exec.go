@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/Godric-W/Equus/internal/agent"
@@ -24,10 +25,23 @@ func newExecCommand(stdout, stderr io.Writer) *cobra.Command {
 }
 
 func runExec(ctx context.Context, prompt string, stdout, stderr io.Writer) error {
-	session, _, _, err := buildSession()
+	configured, err := loadConfig()
 	if err != nil {
 		return err
 	}
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	session, _, err := buildSession(configured, workingDir)
+	if err != nil {
+		return err
+	}
+	// Non-interactive: approvals have nowhere to go, so deny (the session
+	// reports the denial to the model, which can adapt).
+	session.SetApprover(func(context.Context, agent.ApprovalRequest) (agent.ApprovalDecision, error) {
+		return agent.ApprovalDenied, nil
+	})
 	answer, err := session.Ask(ctx, prompt, chatEventSink(stdout))
 	if err != nil && answer == "" {
 		if ctx.Err() != nil {

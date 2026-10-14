@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 
 	"github.com/Godric-W/Equus/internal/agent"
 	"github.com/Godric-W/Equus/internal/llm"
@@ -66,7 +67,7 @@ func TestUpdateCommitAndQuit(t *testing.T) {
 	if command == nil {
 		t.Fatal("expected a command to echo the user line and start the turn")
 	}
-	if !strings.Contains(model.userLine("hello"), "hello") {
+	if joined := strings.Join(model.userEntry("hello"), "\n"); !strings.Contains(joined, "hello") {
 		t.Fatal("user line rendering lost the prompt text")
 	}
 
@@ -108,6 +109,84 @@ func TestUpdateHandlesContentDeltaViaCopy(t *testing.T) {
 	}
 }
 
+// The composer uses a fixed content height. Resizing the textarea on every
+// keystroke leaves its internal viewport YOffset stale, which scrolls the first
+// line out of view (so only the last line is visible) — the bug this guards.
+func TestInputHeightIsFixed(t *testing.T) {
+	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.resize(80, 24)
+	for _, r := range "one" {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		model = updated.(Model)
+	}
+	if got := model.input.Height(); got != maxInputRows {
+		t.Fatalf("height = %d, want %d", got, maxInputRows)
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	model = updated.(Model)
+	if got := model.input.Height(); got != maxInputRows {
+		t.Fatalf("height after newline = %d, want %d", got, maxInputRows)
+	}
+}
+
+func TestViewLinesPaddedToWidth(t *testing.T) {
+	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.resize(40, 24)
+	view := model.View()
+	for _, line := range strings.Split(view, "\n") {
+		if width := xansi.StringWidth(line); width != 40 {
+			t.Fatalf("line width = %d, want 40: %q", width, line)
+		}
+	}
+}
+
+func TestRenderPrefixes(t *testing.T) {
+	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.resize(80, 24)
+	if got := stripANSI(strings.Join(model.userEntry("hello"), "\n")); !strings.Contains(got, "› hello") {
+		t.Fatalf("userEntry = %q", got)
+	}
+	if got := stripANSI(model.assistantLine("answer")); !strings.Contains(got, "• answer") {
+		t.Fatalf("assistantLine = %q", got)
+	}
+	if got := stripANSI(strings.Join(model.toolCallEntry("grep", "pattern"), "\n")); !strings.Contains(got, "Ran grep") {
+		t.Fatalf("toolCallEntry = %q", got)
+	}
+	if got := stripANSI(strings.Join(model.toolResultEntry("grep", "a.go:1: x"), "\n")); !strings.Contains(got, "└ grep: a.go:1: x") {
+		t.Fatalf("toolResultEntry = %q", got)
+	}
+}
+
+func TestStatusLineShowsModelAndCWD(t *testing.T) {
+	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi"), Model: "glm-5.3", CWD: "/tmp/work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.resize(80, 24)
+	got := stripANSI(model.statusLine())
+	if !strings.Contains(got, "glm-5.3") || !strings.Contains(got, "/tmp/work") || !strings.Contains(got, "ready") {
+		t.Fatalf("statusLine = %q", got)
+	}
+	model.running = true
+	if got := stripANSI(model.statusLine()); !strings.Contains(got, "working") {
+		t.Fatalf("statusLine while running = %q", got)
+	}
+}
+
+// stripANSI removes SGR escape sequences for assertion-friendly comparison.
+func stripANSI(s string) string {
+	return xansi.Strip(s)
+}
+
 func TestFinishTurnFlushesAnswer(t *testing.T) {
 	model, err := NewModel(context.Background(), Options{Session: newTestSession(t, "hi")})
 	if err != nil {
@@ -118,18 +197,15 @@ func TestFinishTurnFlushesAnswer(t *testing.T) {
 	if model.active != "你好" {
 		t.Fatalf("active = %q, want %q", model.active, "你好")
 	}
-	command := model.finishTurn(turnDoneMsg{answer: "你好"})
+	model.finishTurn(turnDoneMsg{answer: "你好"})
 	if model.running {
 		t.Fatal("running should be false after turn done")
-	}
-	if command == nil {
-		t.Fatal("expected a print command for the committed answer")
 	}
 	if model.active != "" {
 		t.Fatalf("active buffer not reset: %q", model.active)
 	}
-	if !strings.Contains(model.assistantLine("你好"), "你好") {
-		t.Fatal("assistant line rendering lost the answer")
+	if joined := strings.Join(model.transcript, "\n"); !strings.Contains(joined, "你好") {
+		t.Fatalf("answer not committed to transcript: %v", model.transcript)
 	}
 }
 

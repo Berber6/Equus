@@ -31,6 +31,24 @@ type ApplyPatchTool struct{ Root string }
 
 func (tool ApplyPatchTool) Name() string { return "apply_patch" }
 
+// ApprovalKind reports the policy category for this tool.
+func (tool ApplyPatchTool) ApprovalKind() approvalKind { return approvalKindWrite }
+
+// ApprovalSummary returns a short description of the patch for approval.
+func (tool ApplyPatchTool) ApprovalSummary(arguments []byte) (string, bool) {
+	var input struct {
+		Patch string `json:"patch"`
+	}
+	if err := json.Unmarshal(arguments, &input); err != nil {
+		return "", false
+	}
+	first := strings.TrimSpace(input.Patch)
+	if index := strings.IndexByte(first, '\n'); index >= 0 {
+		first = strings.TrimSpace(first[:index])
+	}
+	return "apply patch: " + first, strings.TrimSpace(input.Patch) != ""
+}
+
 func (tool ApplyPatchTool) Description() string {
 	return "Apply a patch to create, update, delete or move files. The patch is a block of text " +
 		"starting with '*** Begin Patch' and ending with '*** End Patch', containing hunks of the form " +

@@ -18,9 +18,9 @@ type turnDoneMsg struct {
 	err    error
 }
 
-// printMsg carries already-rendered lines to be written into the terminal's
-// scrollback via tea.Println. This is how the conversation becomes durable:
-// it lives in normal scrollback rather than a managed full-screen region.
-type printMsg struct {
-	text string
+// approvalMsg asks the UI to confirm an operation; it carries the reply
+// channel the background turn is blocked on.
+type approvalMsg struct {
+	summary string
+	reply   chan agent.ApprovalDecision
 }

@@ -19,15 +19,56 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.resize(message.Width, message.Height)
 		return m, nil
 	case eventMsg:
-		return m, m.handleEvent(message.event)
+		m.handleEvent(message.event)
+		return m, nil
+	case approvalMsg:
+		m.pending = &approvalPrompt{summary: message.summary, reply: message.reply}
+		return m, nil
 	case turnDoneMsg:
-		return m, m.finishTurn(message)
-	case printMsg:
-		return m, tea.Println(message.text)
+		m.finishTurn(message)
+		return m, nil
+	case tea.MouseMsg:
+		m.handleMouse(message)
+		return m, nil
 	case tea.KeyMsg:
-		return m.handleKey(message)
+		updated, command := m.handleKey(message)
+		if model, ok := updated.(Model); ok {
+			model.updateInputLayout()
+			return model, command
+		}
+		return updated, command
 	}
 	return m, nil
+}
+
+// handleMouse scrolls the transcript on wheel events.
+func (m *Model) handleMouse(message tea.MouseMsg) {
+	switch message.Button {
+	case tea.MouseButtonWheelUp:
+		m.scrollBy(3)
+	case tea.MouseButtonWheelDown:
+		m.scrollBy(-3)
+	}
+}
+
+// replyApproval resolves a pending approval and clears it.
+func (m *Model) replyApproval(decision agent.ApprovalDecision) {
+	if m.pending == nil {
+		return
+	}
+	select {
+	case m.pending.reply <- decision:
+	default:
+	}
+	m.pending = nil
+}
+
+// scrollBy adjusts the transcript scroll offset, clamped to the content.
+func (m *Model) scrollBy(delta int) {
+	m.scroll += delta
+	if m.scroll < 0 {
+		m.scroll = 0
+	}
 }
 
 // resize reflows the input box to the new size.
@@ -38,13 +79,33 @@ func (m *Model) resize(width, height int) {
 	m.width = width
 	m.height = height
 	m.input.SetWidth(width - inputPromptWidth())
-	m.ready = true
+	m.updateInputLayout()
+}
+
+// updateInputLayout keeps the textarea at its fixed content height. It must
+// NOT resize with the content: calling SetHeight on every keystroke leaves the
+// textarea's internal viewport YOffset stale, which scrolls the first line out
+// of view (so only the last line is visible).
+func (m *Model) updateInputLayout() {
+	m.input.SetHeight(maxInputRows)
 }
 
 // handleKey routes a key press to the appropriate handler. Editing keys fall
 // through to the textarea, whose raw-mode handling covers backspace, arrows
 // and cursor movement — the reason the TUI replaces the old line reader.
 func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// While an approval is pending, y/a/n decide it and nothing else is routed.
+	if m.pending != nil {
+		switch key.String() {
+		case "y", "Y":
+			m.replyApproval(agent.ApprovalOnce)
+		case "a", "A":
+			m.replyApproval(agent.ApprovalSession)
+		case "n", "N", "esc", "ctrl+c":
+			m.replyApproval(agent.ApprovalDenied)
+		}
+		return m, nil
+	}
 	switch key.String() {
 	case "ctrl+c":
 		if m.running {
@@ -68,8 +129,19 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		m.historyPos = -1
 		return m, nil
+	case "pgup":
+		m.scrollBy(m.height / 2)
+		return m, nil
+	case "pgdown":
+		m.scrollBy(-(m.height / 2))
+		return m, nil
 	case "up":
 		if m.running {
+			break
+		}
+		// Move within the input's lines first; only recall history when the
+		// cursor is already on the first line.
+		if m.input.Line() > 0 {
 			break
 		}
 		if m.recallHistory(-1) {
@@ -79,9 +151,23 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.running {
 			break
 		}
+		if m.input.Line() < strings.Count(m.input.Value(), "\n") {
+			break
+		}
 		if m.recallHistory(1) {
 			return m, nil
 		}
+	case "ctrl+j", "alt+enter":
+		// Insert a newline instead of submitting. Bubble Tea v1 cannot
+		// distinguish shift+enter from enter (no Kitty keyboard protocol), so
+		// these are the reliable multi-line keys: ctrl+j works everywhere,
+		// alt+enter where the terminal reports it.
+		if m.running {
+			return m, nil
+		}
+		var command tea.Cmd
+		m.input, command = m.input.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		return m, command
 	case "enter":
 		if m.running {
 			return m, nil
@@ -95,12 +181,13 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.historyPos = -1
 		m.active = ""
 		m.running = true
+		m.scroll = 0
 		m.status = "thinking"
-		// Echo the user's line into the scrollback, then start the turn.
-		return m, tea.Sequence(
-			tea.Println(m.userLine(prompt)),
-			m.runTurn(prompt),
-		)
+		// Echo the user's line into the transcript (preceded by a blank line to
+		// separate turns), then start the turn.
+		m.appendTranscript("")
+		m.appendTranscript(m.userEntry(prompt)...)
+		return m, m.runTurn(prompt)
 	}
 
 	var command tea.Cmd
@@ -122,9 +209,9 @@ func (m Model) runTurn(prompt string) tea.Cmd {
 	}
 }
 
-// handleEvent folds a streaming agent event into the model, emitting any
-// lines that belong in the durable scrollback.
-func (m *Model) handleEvent(event agent.Event) tea.Cmd {
+// handleEvent folds a streaming agent event into the model, committing any
+// lines that belong in the transcript.
+func (m *Model) handleEvent(event agent.Event) {
 	switch event.Kind {
 	case agent.EventReasoningDelta:
 		m.status = "thinking"
@@ -132,45 +219,44 @@ func (m *Model) handleEvent(event agent.Event) tea.Cmd {
 		m.status = "responding"
 		m.active += event.Text
 	case agent.EventToolCall:
-		command := m.flushActive()
+		m.flushActive()
 		m.status = "tool: " + event.Tool
-		line := m.palette.tool().Render("[tool] " + event.Tool + "(" + event.Text + ")")
-		return tea.Sequence(command, tea.Println(line))
+		m.appendTranscript(m.toolCallEntry(event.Tool, event.Text)...)
 	case agent.EventToolResult:
-		line := m.palette.dim().Render("[tool-result] " + event.Tool + ": " + firstLine(event.Text))
-		return tea.Println(line)
+		m.appendTranscript(m.toolResultEntry(event.Tool, event.Text)...)
 	case agent.EventUsage:
 		if event.Usage != nil {
-			return tea.Println(m.palette.dim().Render(usageLine(event.Usage)))
+			m.appendTranscript(m.usageEntry(usageLine(event.Usage))...)
 		}
 	case agent.EventError:
-		return tea.Println(m.palette.failure().Render("error: " + event.Text))
+		m.appendTranscript(m.errorEntry(event.Text)...)
+	case agent.EventApproval:
+		// The prompt itself is drawn from m.pending (set via approvalMsg).
+		m.status = "awaiting approval"
 	}
-	return nil
 }
 
-// finishTurn finalizes the turn, committing the answer into the scrollback.
-func (m *Model) finishTurn(message turnDoneMsg) tea.Cmd {
-	commands := []tea.Cmd{m.flushActive()}
+// finishTurn finalizes the turn, committing the answer into the transcript.
+func (m *Model) finishTurn(message turnDoneMsg) {
+	m.flushActive()
 	if message.err != nil && !errors.Is(message.err, context.Canceled) {
 		if text := message.err.Error(); text != "" {
-			commands = append(commands, tea.Println(m.palette.failure().Render("error: "+text)))
+			m.appendTranscript(m.errorEntry(text)...)
 		}
 	}
 	m.running = false
 	m.status = "idle"
-	return tea.Sequence(commands...)
 }
 
-// flushActive emits the accumulated assistant stream into the scrollback and
+// flushActive commits the accumulated assistant stream into the transcript and
 // resets the buffer.
-func (m *Model) flushActive() tea.Cmd {
+func (m *Model) flushActive() {
 	text := strings.TrimRight(m.active, "\n")
 	m.active = ""
 	if strings.TrimSpace(text) == "" {
-		return nil
+		return
 	}
-	return tea.Println(m.assistantLine(text))
+	m.appendTranscript(m.assistantEntry(text)...)
 }
 
 // recallHistory walks the submitted-prompt history. It reports whether the

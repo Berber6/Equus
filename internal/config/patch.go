@@ -19,11 +19,18 @@ type configPatch struct {
 	ModelProvider  *string                      `yaml:"model_provider"`
 	ModelProviders map[string]ModelProviderInfo `yaml:"model_providers"`
 	Logging        *LoggingPatch                `yaml:"logging"`
+	Approval       *ApprovalPatch               `yaml:"approval"`
 }
 
 type LoggingPatch struct {
 	Level    *string `yaml:"level"`
 	TraceLLM *bool   `yaml:"trace_llm"`
+}
+
+type ApprovalPatch struct {
+	Policy *string `yaml:"policy"`
+	Shell  *string `yaml:"shell"`
+	Write  *string `yaml:"write"`
 }
 
 func (patch configPatch) apply(base Config) Config {
@@ -52,6 +59,17 @@ func (patch configPatch) apply(base Config) Config {
 		}
 		if patch.Logging.TraceLLM != nil {
 			base.Logging.TraceLLM = *patch.Logging.TraceLLM
+		}
+	}
+	if patch.Approval != nil {
+		if patch.Approval.Policy != nil {
+			base.Approval.Policy = ApprovalPolicy(*patch.Approval.Policy)
+		}
+		if patch.Approval.Shell != nil {
+			base.Approval.Shell = ApprovalMode(*patch.Approval.Shell)
+		}
+		if patch.Approval.Write != nil {
+			base.Approval.Write = ApprovalMode(*patch.Approval.Write)
 		}
 	}
 	return base

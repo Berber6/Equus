@@ -24,6 +24,12 @@ type Options struct {
 	BaseInstructions string
 	Registry         *toolRegistry
 	MaxRoundTrips    int
+	// Approver decides whether an operation requiring approval may proceed.
+	// A nil approver denies every approval-requiring operation.
+	Approver Approver
+	// ApprovalMode resolves the policy for a category ("shell", "write"):
+	// ApprovalModeAsk / Allow / Deny.
+	ApprovalMode func(category string) ApprovalMode
 }
 
 // Event is a progress notification emitted while the session runs.
@@ -44,6 +50,7 @@ const (
 	EventToolResult     EventKind = "tool_result"
 	EventUsage          EventKind = "usage"
 	EventError          EventKind = "error"
+	EventApproval       EventKind = "approval"
 )
 
 // Session keeps conversation history and drives one agent turn at a time.
@@ -53,6 +60,9 @@ type Session struct {
 
 	mu      sync.Mutex
 	history []llm.ResponseItem
+	// approved caches categories granted "for session" so later identical
+	// categories are not re-prompted.
+	approved map[approvalKind]bool
 }
 
 // NewSession creates a session bound to a model client and tool registry.
@@ -78,8 +88,19 @@ func NewSession(client llm.Client, options Options) (*Session, error) {
 			BaseInstructions: instructions,
 			Registry:         registry,
 			MaxRoundTrips:    roundTrips,
+			Approver:         options.Approver,
+			ApprovalMode:     options.ApprovalMode,
 		},
+		approved: make(map[approvalKind]bool),
 	}, nil
+}
+
+// SetApprover installs the approver after construction (the interactive UI
+// only has one once its program is running).
+func (session *Session) SetApprover(approver Approver) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.options.Approver = approver
 }
 
 // History returns a defensive copy of the conversation so far.
@@ -232,22 +253,93 @@ func finalizeToolCall(call llm.ToolCall, arguments string) llm.ToolCall {
 func (session *Session) executeToolCalls(ctx context.Context, calls []llm.ToolCall, sink func(Event)) error {
 	for _, call := range calls {
 		sink(Event{Kind: EventToolCall, Tool: call.Name, Text: string(call.Arguments)})
-		tool, ok := session.options.Registry.lookup(call.Name)
-		var result string
-		var err error
-		switch {
-		case !ok:
-			result = fmt.Sprintf("error: unknown tool %q", call.Name)
-		default:
-			result, err = tool.Execute(ctx, call.Arguments)
-			if err != nil {
-				result = "error: " + err.Error()
-			}
-		}
+		result := session.runTool(ctx, call, sink)
 		sink(Event{Kind: EventToolResult, Tool: call.Name, Text: truncateForEvent(result)})
 		session.appendHistory(llm.ToolResultMessage(call.ID, result))
 	}
 	return nil
+}
+
+// runTool executes one tool, applying the approval policy first. Denials are
+// reported as a tool result so the model can adapt.
+func (session *Session) runTool(ctx context.Context, call llm.ToolCall, sink func(Event)) string {
+	tool, ok := session.options.Registry.lookup(call.Name)
+	if !ok {
+		return fmt.Sprintf("error: unknown tool %q", call.Name)
+	}
+	if decision, denied := session.checkApproval(ctx, tool, call, sink); denied {
+		return decision
+	}
+	result, err := tool.Execute(ctx, call.Arguments)
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	return result
+}
+
+// checkApproval resolves the approval policy for a tool. It returns a
+// user-facing message and true when the operation must not run.
+func (session *Session) checkApproval(ctx context.Context, tool Tool, call llm.ToolCall, sink func(Event)) (string, bool) {
+	requestor, ok := tool.(approvalRequestor)
+	if !ok {
+		return "", false
+	}
+	category := requestor.ApprovalKind()
+	summary, needs := requestor.ApprovalSummary(call.Arguments)
+	if category == approvalKindNone {
+		return "", false
+	}
+	mode := ApprovalModeAsk
+	if session.options.ApprovalMode != nil {
+		mode = session.options.ApprovalMode(string(category))
+	}
+	switch mode {
+	case ApprovalModeAllow:
+		return "", false
+	case ApprovalModeDeny:
+		return "error: " + string(category) + " is denied by policy", true
+	}
+	// Ask: session grants short-circuit the prompt.
+	if session.sessionApproved(category) {
+		return "", false
+	}
+	requiresApproval := needs
+	if !requiresApproval {
+		// Ask mode still prompts for a category we cannot summarize safely.
+		requiresApproval = true
+	}
+	if !requiresApproval {
+		return "", false
+	}
+	sink(Event{Kind: EventApproval, Tool: call.Name, Text: summary})
+	if session.options.Approver == nil {
+		return "error: approval required but no approver is configured", true
+	}
+	decision, err := session.options.Approver(ctx, ApprovalRequest{Tool: call.Name, Summary: summary})
+	if err != nil {
+		return "error: approval failed: " + err.Error(), true
+	}
+	switch decision {
+	case ApprovalOnce:
+		return "", false
+	case ApprovalSession:
+		session.markSessionApproved(category)
+		return "", false
+	default:
+		return "error: the user denied this operation", true
+	}
+}
+
+func (session *Session) sessionApproved(category approvalKind) bool {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.approved[category]
+}
+
+func (session *Session) markSessionApproved(category approvalKind) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.approved[category] = true
 }
 
 func truncateForEvent(text string) string {

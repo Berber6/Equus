@@ -58,16 +58,33 @@ func Run(ctx context.Context, options RunOptions) error {
 	if err != nil {
 		return err
 	}
-	// Inline mode (no alternate screen): the transcript is written to the
-	// terminal's normal scrollback via tea.Println, so exiting leaves the
-	// conversation visible and the terminal's own scrollback and mouse wheel
-	// work as usual. Only the composer is a managed bottom region.
+	model.appendTranscript(model.banner(), "")
+	// Full-screen (alternate screen) mode: the whole interface is drawn by
+	// View() — a self-scrolling transcript, the composer, and a status line.
+	// Alternate screen is required because interleaving tea.Println with a
+	// growing inline view desyncs Bubble Tea's cursor arithmetic.
 	program := tea.NewProgram(model,
 		tea.WithContext(ctx),
 		tea.WithInput(input),
 		tea.WithOutput(output),
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	)
 	model.program.program = program
+	if options.Session != nil {
+		options.Session.SetApprover(func(inner context.Context, request agent.ApprovalRequest) (agent.ApprovalDecision, error) {
+			reply := make(chan agent.ApprovalDecision, 1)
+			program.Send(approvalMsg{summary: request.Summary, reply: reply})
+			select {
+			case decision := <-reply:
+				return decision, nil
+			case <-inner.Done():
+				return agent.ApprovalDenied, inner.Err()
+			case <-ctx.Done():
+				return agent.ApprovalDenied, ctx.Err()
+			}
+		})
+	}
 	_, err = program.Run()
 	return err
 }

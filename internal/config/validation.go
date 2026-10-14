@@ -33,6 +33,18 @@ func Validate(configured Config) error {
 	default:
 		problems = append(problems, fmt.Sprintf("logging.level %q is invalid", configured.Logging.Level))
 	}
+	switch configured.Approval.Policy {
+	case "", ApprovalPolicyUntrusted, ApprovalPolicyOnRequest, ApprovalPolicyNever:
+	default:
+		problems = append(problems, fmt.Sprintf("approval.policy %q is invalid", configured.Approval.Policy))
+	}
+	for name, mode := range map[string]ApprovalMode{"shell": configured.Approval.Shell, "write": configured.Approval.Write} {
+		switch mode {
+		case "", ApprovalModeAsk, ApprovalModeAllow, ApprovalModeDeny:
+		default:
+			problems = append(problems, fmt.Sprintf("approval.%s %q is invalid", name, mode))
+		}
+	}
 	if len(problems) == 0 {
 		return nil
 	}

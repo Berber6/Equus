@@ -76,6 +76,20 @@ type WriteFileTool struct{ Root string }
 
 func (tool WriteFileTool) Name() string { return "write_file" }
 
+// ApprovalKind reports the policy category for this tool.
+func (tool WriteFileTool) ApprovalKind() approvalKind { return approvalKindWrite }
+
+// ApprovalSummary returns the file being written for approval prompts.
+func (tool WriteFileTool) ApprovalSummary(arguments []byte) (string, bool) {
+	var input struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(arguments, &input); err != nil {
+		return "", false
+	}
+	return "write " + strings.TrimSpace(input.Path), strings.TrimSpace(input.Path) != ""
+}
+
 func (tool WriteFileTool) Description() string {
 	return "Create or overwrite a UTF-8 text file relative to the working directory with the given content."
 }
@@ -177,6 +191,7 @@ func NewDefaultRegistry(root string) (*toolRegistry, error) {
 		ApplyPatchTool{Root: root},
 		GlobTool{Root: root},
 		GrepTool{Root: root},
+		ShellTool{Root: root},
 	} {
 		if err := registry.register(tool); err != nil {
 			return nil, err

@@ -26,11 +26,20 @@ func newChatCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 }
 
 func runChat(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
-	session, model, workingDir, err := buildSession()
+	configured, err := loadConfig()
 	if err != nil {
 		return err
 	}
-	err = tui.Run(ctx, tui.RunOptions{
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	// The TUI installs its own interactive approver once its program runs.
+	session, model, err := buildSession(configured, workingDir)
+	if err != nil {
+		return err
+	}
+	return tui.Run(ctx, tui.RunOptions{
 		Session: session,
 		Input:   stdin,
 		Output:  stdout,
@@ -38,26 +47,17 @@ func runChat(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) err
 		Model:   model,
 		CWD:     workingDir,
 	})
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // buildSession composes the model client and agent session from config,
-// returning the session plus the model name and working directory for the TUI
-// header.
-func buildSession() (*agent.Session, string, string, error) {
-	configured, err := loadConfig()
-	if err != nil {
-		return nil, "", "", err
-	}
+// returning the session plus the model name.
+func buildSession(configured config.Config, workingDir string) (*agent.Session, string, error) {
 	provider, _, err := configured.ResolveProvider()
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", err
 	}
 	if provider.WireAPI != config.WireAPIChatCompletions {
-		return nil, "", "", fmt.Errorf("unsupported wire_api %q (only %q is implemented)", provider.WireAPI, config.WireAPIChatCompletions)
+		return nil, "", fmt.Errorf("unsupported wire_api %q (only %q is implemented)", provider.WireAPI, config.WireAPIChatCompletions)
 	}
 	client, err := openai.NewClient(openai.Options{
 		ProviderName: configured.ModelProvider,
@@ -67,19 +67,21 @@ func buildSession() (*agent.Session, string, string, error) {
 		Timeout:      provider.Timeout,
 	})
 	if err != nil {
-		return nil, "", "", err
-	}
-	workingDir, err := os.Getwd()
-	if err != nil {
-		return nil, "", "", err
+		return nil, "", err
 	}
 	registry, err := agent.NewDefaultRegistry(workingDir)
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", err
 	}
-	session, err := agent.NewSession(client, agent.Options{Registry: registry})
+	approval := configured.Approval
+	session, err := agent.NewSession(client, agent.Options{
+		Registry: registry,
+		ApprovalMode: func(category string) agent.ApprovalMode {
+			return agent.ApprovalMode(approval.EffectiveMode(category))
+		},
+	})
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", err
 	}
-	return session, configured.Model, workingDir, nil
+	return session, configured.Model, nil
 }

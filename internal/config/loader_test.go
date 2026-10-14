@@ -179,3 +179,32 @@ model_providers:
 		t.Fatalf("api key = %q", provider.APIKey)
 	}
 }
+
+func TestApprovalDefaultsAndOverrides(t *testing.T) {
+	configured, err := applyEnvironmentOverrides(Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.Approval.EffectiveMode("shell") != ApprovalModeAsk {
+		t.Fatalf("default shell mode = %q", configured.Approval.EffectiveMode("shell"))
+	}
+	if configured.Approval.EffectiveMode("write") != ApprovalModeAllow {
+		t.Fatalf("default write mode = %q", configured.Approval.EffectiveMode("write"))
+	}
+
+	path := filepath.Join(t.TempDir(), ConfigFileName)
+	content := "model: m\nmodel_providers:\n  openai:\n    api_key: k\n    base_url: http://x/v1\napproval:\n  policy: never\n  shell: deny\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := NewFileLoader(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Approval.EffectiveMode("shell") != ApprovalModeDeny {
+		t.Fatalf("shell override = %q", loaded.Approval.EffectiveMode("shell"))
+	}
+	if loaded.Approval.EffectiveMode("write") != ApprovalModeAllow {
+		t.Fatalf("policy never should allow write, got %q", loaded.Approval.EffectiveMode("write"))
+	}
+}

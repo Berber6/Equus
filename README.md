@@ -23,7 +23,9 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
   - `read_file` / `write_file` / `list_files` —— 读写与列目录；
   - `apply_patch` —— 以补丁文本（`*** Begin Patch` … `*** End Patch`）新增 / 删除 / 更新 / 移动文件，支持多块编辑与模糊上下文定位；
   - `glob` —— 按 glob 模式查找文件（`**` 递归）；
-  - `grep` —— 按正则搜索文件内容，返回 `path:line: text`。
+  - `grep` —— 按正则搜索文件内容，返回 `path:line: text`；
+  - `shell` —— 在工作目录执行 shell 命令（默认需审批）。
+- **审批策略**：高危操作（默认 `shell`）按配置决定是询问 / 放行 / 拒绝；交互模式弹窗确认（`[y]` 一次 / `[a]` 本会话 / `[n]` 拒绝），非交互模式默认拒绝。
 - YAML 配置 + 环境变量覆盖（`${VAR}` 展开与 `EQUUS_*` 变量）。
 - API Key 支持三种注入方式：配置文件内联 / 密钥文件（`api_key_file`）/ 环境变量。
 - 交互式 TUI（Bubble Tea）：全屏对话、行编辑输入框、历史召回、滚动 transcript、实时状态。
@@ -46,7 +48,7 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 
 ### 终端界面
 
-- **TUI**：`internal/tui` 基于 Bubble Tea（`bubbles/textarea` 输入、`bubbles/viewport` 滚动、`lipgloss` 配色）实现全屏交互：底部输入框带完整行编辑，上方滚动显示对话与工具调用。仅实现 Equus 当前能力范围，markdown 渲染、审批对话框、slash command、session 选择器等尚未纳入。
+- **TUI**：`internal/tui` 基于 Bubble Tea（`bubbles/textarea` 输入、`lipgloss` 配色）实现**全屏（alternate screen）**交互：自绘可滚动对话区 + 输入框面板 + 状态行。仅实现 Equus 当前能力范围，markdown 渲染、审批对话框、slash command、session 选择器等尚未纳入。
 
 ### 待实现的能力
 
@@ -154,7 +156,12 @@ equus config check
 equus config show
 ```
 
-`chat` 是一个 Bubble Tea 全屏 TUI：底部输入框支持完整的行编辑（退格、左右移动、方向键召回历史），上方滚动显示对话与工具调用，`PgUp`/`PgDn` 翻页。按 `Ctrl-D`（输入为空时）或 `Ctrl-C`（空闲时）退出；运行中 `Esc`/`Ctrl-C` 可打断当前回合。
+`chat` 是一个 Bubble Tea **全屏 TUI**（alternate screen）：上方是自绘的对话区（含工具调用），下方是输入框面板与状态行。输入框支持完整行编辑（退格、左右移动、`↑`/`↓` 在多行内移动光标，到首/末行才召回历史）。`PgUp`/`PgDn` 与滚轮可滚动对话区。
+
+- **换行**：`Ctrl+J`（所有终端可用）或 `Alt+Enter`；`Enter` 提交。
+- **退出**：`Ctrl-D`（输入为空时）或 `Ctrl-C`（空闲时）；运行中 `Esc`/`Ctrl-C` 打断当前回合。
+
+> 全屏（alternate screen）模式下，退出后本次对话**不保留**在终端 scrollback 中（与 Claude Code 一致）；这是 Bubble Tea 下可靠支持多行输入的必要取舍。
 
 > `chat` 需要 stdin 为交互式终端；在管道/重定向环境（如 `echo ... | equus chat`）下会报错并退出——非交互场景请用 `equus exec`。
 
