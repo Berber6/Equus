@@ -148,13 +148,22 @@ export EQUUS_MODEL="GLM-5.3"
 # 交互式 TUI 对话（需要真实终端）
 equus chat
 
-# 一次性执行
+# 继续最近一次会话 / 按 id 恢复
+equus chat --continue
+equus chat --resume <session-id>
+
+# 列出已保存的会话
+equus sessions
+
+# 一次性执行（不保存会话）
 equus exec "读取 note.txt 并总结"
 
 # 检查 / 查看配置（密钥已脱敏）
 equus config check
 equus config show
 ```
+
+会话以 append-only JSONL 保存在 `~/.equus/sessions/`（可用 `EQUUS_HOME` 覆盖）。`equus chat` 默认保存（`--no-save` 关闭）；`exec` 不保存。
 
 `chat` 是一个 Bubble Tea **全屏 TUI**（alternate screen）：上方是自绘的对话区（含工具调用），下方是输入框面板与状态行。输入框支持完整行编辑（退格、左右移动、`↑`/`↓` 在多行内移动光标，到首/末行才召回历史）。`PgUp`/`PgDn` 与滚轮可滚动对话区。
 

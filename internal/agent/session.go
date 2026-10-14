@@ -30,6 +30,14 @@ type Options struct {
 	// ApprovalMode resolves the policy for a category ("shell", "write"):
 	// ApprovalModeAsk / Allow / Deny.
 	ApprovalMode func(category string) ApprovalMode
+	// Recorder, when set, is notified of every conversation item appended to
+	// history (for persisting the session).
+	Recorder Recorder
+}
+
+// Recorder receives conversation items as they are appended to history.
+type Recorder interface {
+	Record(item llm.ResponseItem)
 }
 
 // Event is a progress notification emitted while the session runs.
@@ -90,6 +98,7 @@ func NewSession(client llm.Client, options Options) (*Session, error) {
 			MaxRoundTrips:    roundTrips,
 			Approver:         options.Approver,
 			ApprovalMode:     options.ApprovalMode,
+			Recorder:         options.Recorder,
 		},
 		approved: make(map[approvalKind]bool),
 	}, nil
@@ -103,6 +112,22 @@ func (session *Session) SetApprover(approver Approver) {
 	session.options.Approver = approver
 }
 
+// SetRecorder installs a recorder after construction.
+func (session *Session) SetRecorder(recorder Recorder) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.options.Recorder = recorder
+}
+
+// Restore replaces the conversation history (used when resuming a session).
+func (session *Session) Restore(items []llm.ResponseItem) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	cloned := make([]llm.ResponseItem, len(items))
+	copy(cloned, items)
+	session.history = cloned
+}
+
 // History returns a defensive copy of the conversation so far.
 func (session *Session) History() []llm.ResponseItem {
 	session.mu.Lock()
@@ -114,8 +139,14 @@ func (session *Session) History() []llm.ResponseItem {
 
 func (session *Session) appendHistory(items ...llm.ResponseItem) {
 	session.mu.Lock()
-	defer session.mu.Unlock()
 	session.history = append(session.history, items...)
+	recorder := session.options.Recorder
+	session.mu.Unlock()
+	if recorder != nil {
+		for _, item := range items {
+			recorder.Record(item)
+		}
+	}
 }
 
 // Ask streams one user turn to completion, emitting progress events to the

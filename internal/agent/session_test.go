@@ -207,3 +207,43 @@ func TestMaxRoundTripsGuard(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestRestoreReplacesHistory(t *testing.T) {
+	client := &fakeClient{responses: []llm.Response{{Message: llm.AssistantMessage("回答"), FinishReason: llm.FinishReasonStop}}}
+	session, err := NewSession(client, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Restore([]llm.ResponseItem{llm.UserMessage("小明"), llm.AssistantMessage("你好小明")})
+	if got := len(session.History()); got != 2 {
+		t.Fatalf("history len = %d", got)
+	}
+	// A new turn builds on the restored history.
+	if _, err := session.Ask(context.Background(), "我叫什么", func(Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	history := session.History()
+	if len(history) != 4 || history[0].Content != "小明" {
+		t.Fatalf("history = %+v", history)
+	}
+}
+
+func TestRecorderNotified(t *testing.T) {
+	recorder := &recordingRecorder{}
+	client := &fakeClient{responses: []llm.Response{{Message: llm.AssistantMessage("ok"), FinishReason: llm.FinishReasonStop}}}
+	session, err := NewSession(client, Options{Recorder: recorder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Ask(context.Background(), "hi", func(Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	// user item + assistant item
+	if len(recorder.items) != 2 {
+		t.Fatalf("recorded %d items, want 2", len(recorder.items))
+	}
+}
+
+type recordingRecorder struct{ items []llm.ResponseItem }
+
+func (r *recordingRecorder) Record(item llm.ResponseItem) { r.items = append(r.items, item) }

@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
+
+	"github.com/Godric-W/Equus/internal/llm"
 )
 
 // userEntry renders a submitted prompt: a "› " marker on a subtle background
@@ -93,6 +95,34 @@ func (m *Model) appendTranscript(lines ...string) {
 		return
 	}
 	m.transcript = append(m.transcript, lines...)
+}
+
+// renderHistory rebuilds transcript lines from restored conversation items.
+func renderHistory(m Model, items []llm.ResponseItem) []string {
+	var lines []string
+	callNames := map[string]string{} // tool_call id -> tool name
+	for _, item := range items {
+		switch item.Role {
+		case llm.RoleUser:
+			lines = append(lines, "")
+			lines = append(lines, m.userEntry(item.Content)...)
+		case llm.RoleAssistant:
+			if strings.TrimSpace(item.Content) != "" {
+				lines = append(lines, m.assistantEntry(item.Content)...)
+			}
+			for _, call := range item.ToolCalls {
+				callNames[call.ID] = call.Name
+				lines = append(lines, m.toolCallEntry(call.Name, string(call.Arguments))...)
+			}
+		case llm.RoleTool:
+			name := callNames[item.ToolCallID]
+			if name == "" {
+				name = "tool"
+			}
+			lines = append(lines, m.toolResultEntry(name, item.Content)...)
+		}
+	}
+	return lines
 }
 
 // padToWidth pads a rendered line with spaces (or truncates it) so it fills

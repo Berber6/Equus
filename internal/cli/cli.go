@@ -40,9 +40,19 @@ func newRootCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	}
 	root.AddCommand(newChatCommand(stdin, stdout, stderr))
 	root.AddCommand(newExecCommand(stdout, stderr))
+	root.AddCommand(newSessionsCommand(stdout, stderr))
 	root.AddCommand(newVersionCommand(stdout))
 	root.AddCommand(newConfigCommand(stdout, stderr))
 	return root
+}
+
+// sessionsDir is where persisted sessions live.
+func sessionsDir() string {
+	home := equusHome()
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, "sessions")
 }
 
 // equusHome resolves the configuration home directory: EQUUS_HOME when set,

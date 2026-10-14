@@ -10,11 +10,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Godric-W/Equus/internal/agent"
+	"github.com/Godric-W/Equus/internal/llm"
 )
 
 // RunOptions configures the interactive session.
 type RunOptions struct {
 	Session *agent.Session
+	// History pre-fills the transcript (when resuming a session).
+	History []llm.ResponseItem
 	Input   io.Reader
 	Output  io.Writer
 	Version string
@@ -59,6 +62,9 @@ func Run(ctx context.Context, options RunOptions) error {
 		return err
 	}
 	model.appendTranscript(model.banner(), "")
+	if len(options.History) > 0 {
+		model.appendTranscript(renderHistory(model, options.History)...)
+	}
 	// Full-screen (alternate screen) mode: the whole interface is drawn by
 	// View() — a self-scrolling transcript, the composer, and a status line.
 	// Alternate screen is required because interleaving tea.Println with a
