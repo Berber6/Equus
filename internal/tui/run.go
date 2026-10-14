@@ -24,6 +24,10 @@ type RunOptions struct {
 	Model   string
 	CWD     string
 	NoColor bool
+	// Markdown controls assistant markdown rendering; SyntaxHighlight enables
+	// chroma highlighting of fenced code blocks.
+	Markdown        bool
+	SyntaxHighlight bool
 }
 
 // ErrNotTerminal is returned when the input stream is not an interactive
@@ -51,12 +55,14 @@ func Run(ctx context.Context, options RunOptions) error {
 	// not answer the query.
 	lipgloss.SetColorProfile(detectPalette(options.NoColor).colorProfile())
 	model, err := NewModel(ctx, Options{
-		Session: options.Session,
-		Version: options.Version,
-		Model:   options.Model,
-		CWD:     options.CWD,
-		NoColor: options.NoColor,
-		IsTTY:   true,
+		Session:         options.Session,
+		Version:         options.Version,
+		Model:           options.Model,
+		CWD:             options.CWD,
+		NoColor:         options.NoColor,
+		IsTTY:           true,
+		Markdown:        options.Markdown,
+		SyntaxHighlight: options.SyntaxHighlight,
 	})
 	if err != nil {
 		return err
@@ -65,7 +71,8 @@ func Run(ctx context.Context, options RunOptions) error {
 	if used, _ := options.Session.ContextUsage(); used > 0 {
 		model.ctxUsed = used
 	}
-	model.appendTranscript(model.banner(), "")
+	model.appendTranscript(model.logoLines()...)
+	model.appendTranscript("")
 	if len(options.History) > 0 {
 		model.appendTranscript(renderHistory(model, options.History)...)
 	}

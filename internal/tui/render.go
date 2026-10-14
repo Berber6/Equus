@@ -24,24 +24,30 @@ func (m Model) userEntry(text string) []string {
 	return rendered
 }
 
-// assistantEntry renders a committed assistant answer: a "• " marker on the
-// first line, with subsequent lines indented to align under it.
+// assistantEntry renders a committed assistant answer: as markdown when
+// enabled, otherwise as plain text. The first line carries a "• " marker;
+// subsequent lines are indented to align under it.
 func (m Model) assistantEntry(text string) []string {
-	return m.wrapLines(m.assistantLine(text))
-}
-
-// assistantLine renders the answer text with the • marker and indentation.
-func (m Model) assistantLine(text string) string {
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	rendered := make([]string, 0, len(lines))
-	for index, line := range lines {
+	var body []string
+	if m.markdown {
+		body = renderMarkdown(text, m.palette, m.width, m.syntaxHighlight)
+	} else {
+		for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+			body = append(body, m.wrapLines(line)...)
+		}
+	}
+	if len(body) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(body))
+	for index, line := range body {
 		prefix := "  "
 		if index == 0 {
 			prefix = m.palette.dim().Render("• ")
 		}
-		rendered = append(rendered, prefix+line)
+		out = append(out, prefix+line)
 	}
-	return strings.Join(rendered, "\n")
+	return out
 }
 
 // toolCallEntry renders a tool invocation: "• Ran <name> <detail>".

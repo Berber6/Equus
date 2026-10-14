@@ -14,18 +14,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Godric-W/Equus/internal/agent"
+	"github.com/Godric-W/Equus/internal/llm"
+	"github.com/Godric-W/Equus/internal/threadstore"
 )
 
 const (
 	inputPrompt      = "› "
 	inputPlaceholder = "Ask Equus to do anything"
 	inputCharLimit   = 20000
-	// maxInputRows is the textarea's internal scroll window (content rows).
-	maxInputRows = 3
-	// panelRows is the fixed height of the composer panel: one padding row,
-	// the content rows, and one bottom padding row.
-	panelRows = maxInputRows + 2
-	minWidth  = 20
+	// maxInputRows caps the textarea's content rows; beyond it the textarea
+	// scrolls internally. The composer panel is always maxInputRows+2 at most
+	// (one padding row above and below the content).
+	maxInputRows = 6
+	minWidth     = 20
 )
 
 // Model is the Bubble Tea model backing the interactive chat session.
@@ -68,6 +69,19 @@ type Model struct {
 	// pending holds the approval request awaiting a keypress, if any.
 	pending *approvalPrompt
 
+	// picker is the session-selection overlay, when open.
+	picker *sessionPicker
+	// loadSessionFn loads a session's items by id (set by Run).
+	loadSessionFn func(id string) ([]llm.ResponseItem, error)
+	// session ops (set by Run).
+	sessionID    string
+	renameFn     func(id, title string) error
+	deleteFn     func(id string) error
+
+	// markdown / syntaxHighlight control assistant output rendering.
+	markdown        bool
+	syntaxHighlight bool
+
 	// ctxUsed / ctxWindow track the last request's prompt size vs the model's
 	// context window, for the status line percentage.
 	ctxUsed   int64
@@ -86,13 +100,23 @@ type approvalPrompt struct {
 
 // Options configures a new Model.
 type Options struct {
-	Session *agent.Session
-	Version string
-	Model   string
-	CWD     string
-	NoColor bool
-	History []string
-	IsTTY   bool
+	Session         *agent.Session
+	Version         string
+	Model           string
+	CWD             string
+	NoColor         bool
+	History         []string
+	IsTTY           bool
+	Markdown        bool
+	SyntaxHighlight bool
+	// Sessions, when non-nil, opens the session picker with these entries.
+	Sessions []threadstore.Meta
+	// LoadSession loads a session's items by id.
+	LoadSession func(id string) ([]llm.ResponseItem, error)
+	// SessionID is the current session id (for rename/delete).
+	SessionID string
+	RenameFn  func(id, title string) error
+	DeleteFn  func(id string) error
 }
 
 // NewModel builds the interactive model. It returns an error when the session
@@ -132,26 +156,41 @@ func NewModel(ctx context.Context, options Options) (Model, error) {
 	input.BlurredStyle.Prompt = p.dim()
 	input.BlurredStyle.Placeholder = p.dim()
 	input.SetWidth(80)
-	input.SetHeight(maxInputRows)
+	input.SetHeight(1)
 	input.Focus()
 	_ = input.Cursor.SetMode(cursor.CursorStatic)
 
 	return Model{
-		ctx:        ctx,
-		cancel:     cancel,
-		session:    options.Session,
-		program:    &programRef{},
-		palette:    p,
-		input:      input,
-		width:      100,
-		height:     30,
-		status:     "idle",
-		history:    append([]string(nil), options.History...),
-		historyPos: -1,
-		version:    options.Version,
-		model:      options.Model,
-		cwd:        options.CWD,
+		ctx:             ctx,
+		cancel:          cancel,
+		session:         options.Session,
+		program:         &programRef{},
+		palette:         p,
+		input:           input,
+		width:           100,
+		height:          30,
+		status:          "idle",
+		history:         append([]string(nil), options.History...),
+		historyPos:      -1,
+		version:         options.Version,
+		model:           options.Model,
+		cwd:             options.CWD,
+		markdown:        options.Markdown,
+		syntaxHighlight: options.SyntaxHighlight,
+		picker:          newPicker(options.Sessions),
+		loadSessionFn:   options.LoadSession,
+		sessionID:       options.SessionID,
+		renameFn:        options.RenameFn,
+		deleteFn:        options.DeleteFn,
 	}, nil
+}
+
+// newPicker builds a picker when sessions were provided, else nil.
+func newPicker(sessions []threadstore.Meta) *sessionPicker {
+	if sessions == nil {
+		return nil
+	}
+	return &sessionPicker{items: sessions}
 }
 
 func (m Model) Init() tea.Cmd {

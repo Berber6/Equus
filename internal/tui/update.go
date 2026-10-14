@@ -27,6 +27,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case turnDoneMsg:
 		m.finishTurn(message)
 		return m, nil
+	case sessionLoadedMsg:
+		m.applyLoadedSession(message)
+		return m, nil
 	case tea.MouseMsg:
 		m.handleMouse(message)
 		return m, nil
@@ -82,10 +85,10 @@ func (m *Model) resize(width, height int) {
 	m.updateInputLayout()
 }
 
-// updateInputLayout keeps the textarea at its fixed content height. It must
-// NOT resize with the content: calling SetHeight on every keystroke leaves the
-// textarea's internal viewport YOffset stale, which scrolls the first line out
-// of view (so only the last line is visible).
+// updateInputLayout keeps the textarea's own height stable (the live textarea
+// only needs to be tall enough to hold the cursor; the composer frames the
+// visible window itself, so per-keystroke resizing — which would leave the
+// textarea's viewport YOffset stale and hide earlier lines — is avoided).
 func (m *Model) updateInputLayout() {
 	m.input.SetHeight(maxInputRows)
 }
@@ -94,13 +97,21 @@ func (m *Model) updateInputLayout() {
 // through to the textarea, whose raw-mode handling covers backspace, arrows
 // and cursor movement — the reason the TUI replaces the old line reader.
 func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// While an approval is pending, y/a/n decide it and nothing else is routed.
+	// While the session picker is open, it captures all keys.
+	if m.picker != nil {
+		model, command, _ := m.handlePickerKey(key)
+		return model, command
+	}
+	// While an approval is pending, y/a/p/n decide it and nothing else is
+	// routed.
 	if m.pending != nil {
 		switch key.String() {
 		case "y", "Y":
 			m.replyApproval(agent.ApprovalOnce)
 		case "a", "A":
 			m.replyApproval(agent.ApprovalSession)
+		case "p", "P":
+			m.replyApproval(agent.ApprovalPermanent)
 		case "n", "N", "esc", "ctrl+c":
 			m.replyApproval(agent.ApprovalDenied)
 		}
@@ -177,8 +188,19 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.input.Reset()
-		m.history = append(m.history, prompt)
 		m.historyPos = -1
+		// A leading slash dispatches a local command instead of a model turn.
+		parsed, err := parseInput(prompt)
+		if err != nil {
+			m.appendTranscript("")
+			m.appendTranscript(m.errorEntry(err.Error())...)
+			return m, nil
+		}
+		if parsed.Command != nil {
+			m.history = append(m.history, prompt)
+			return m, m.dispatchSlashCommand(*parsed.Command)
+		}
+		m.history = append(m.history, prompt)
 		m.active = ""
 		m.running = true
 		m.scroll = 0
