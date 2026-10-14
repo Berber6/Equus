@@ -250,3 +250,104 @@ func TestStreamRequestsUsage(t *testing.T) {
 		t.Fatalf("stream_options.include_usage missing: %v", body["stream_options"])
 	}
 }
+
+func TestResponsesCompleteDecodes(t *testing.T) {
+	payload := `{
+		"id": "resp_1",
+		"status": "completed",
+		"output": [
+			{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "hi there"}]},
+			{"type": "function_call", "call_id": "c1", "name": "read_file", "arguments": "{\"path\":\"a\"}"}
+		],
+		"usage": {"input_tokens": 9, "output_tokens": 4, "total_tokens": 13}
+	}`
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/responses" {
+			t.Errorf("path = %q", request.URL.Path)
+		}
+		var body map[string]any
+		json.NewDecoder(request.Body).Decode(&body)
+		if body["instructions"] != "You are Equus." {
+			t.Errorf("instructions = %v", body["instructions"])
+		}
+		writer.Write([]byte(payload))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{APIKey: "sk", BaseURL: server.URL, Model: "gpt", WireAPI: "responses"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := llm.NewRequest("gpt", []llm.ResponseItem{llm.UserMessage("hi")})
+	request.Prompt.BaseInstructions = "You are Equus."
+	response, err := client.Complete(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Message.Content != "hi there" {
+		t.Fatalf("content = %q", response.Message.Content)
+	}
+	if len(response.Message.ToolCalls) != 1 || response.Message.ToolCalls[0].ID != "c1" {
+		t.Fatalf("tool calls = %+v", response.Message.ToolCalls)
+	}
+	if response.FinishReason != llm.FinishReasonToolCalls {
+		t.Fatalf("finish = %q", response.FinishReason)
+	}
+	if response.TokenUsage.TotalTokens != 13 {
+		t.Fatalf("usage = %+v", response.TokenUsage)
+	}
+}
+
+func TestResponsesStreamDecodes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		flusher := writer.(http.Flusher)
+		for _, event := range []string{
+			`event: response.output_text.delta`,
+			`data: {"type":"response.output_text.delta","delta":"hel"}`,
+			`data: {"type":"response.output_text.delta","delta":"lo"}`,
+			`data: {"type":"response.output_item.added","item":{"type":"function_call","call_id":"c1","name":"read_file"}}`,
+			`data: {"type":"response.function_call_arguments.delta","delta":"{\"pa"}`,
+			`data: {"type":"response.function_call_arguments.delta","delta":"th\":\"a\"}"}`,
+			`data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":6,"total_tokens":16}}}`,
+		} {
+			writer.Write([]byte(event + "\n\n"))
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	client, _ := NewClient(Options{APIKey: "sk", BaseURL: server.URL, Model: "gpt", WireAPI: "responses"})
+	stream, err := client.Stream(context.Background(), llm.NewRequest("gpt", []llm.ResponseItem{llm.UserMessage("hi")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	var content strings.Builder
+	var calls []llm.ToolCall
+	var usage *llm.TokenUsage
+	for {
+		chunk, err := stream.Recv()
+		if err != nil {
+			break
+		}
+		content.WriteString(chunk.ContentDelta)
+		calls = append(calls, chunk.ToolCalls...)
+		if chunk.TokenUsage != nil {
+			usage = chunk.TokenUsage
+		}
+	}
+	if content.String() != "hello" {
+		t.Fatalf("content = %q", content.String())
+	}
+	joined := ""
+	for _, c := range calls {
+		joined += c.ID + c.Name + string(c.Arguments)
+	}
+	if joined != "c1read_file{\"path\":\"a\"}" {
+		t.Fatalf("joined = %q", joined)
+	}
+	if usage == nil || usage.TotalTokens != 16 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}

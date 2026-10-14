@@ -16,7 +16,7 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 
 ## 功能
 
-- 与任意 OpenAI Chat Completions 兼容端点对话（OpenAI、GLM、DeepSeek、Qwen 等）。
+- 与多种 wire 端点对话：OpenAI Chat Completions（OpenAI、GLM、DeepSeek、Qwen 等）、OpenAI Responses API、Anthropic Messages（Claude 及兼容端点）。由 provider 的 `wire_api` 选择。
 - SSE 流式输出，实时显示思考过程（reasoning）、工具调用与 token 用量。
 - 多轮对话记忆。
 - 内置文件工具（限制在工作目录内）：

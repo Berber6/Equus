@@ -16,14 +16,19 @@ import (
 	"github.com/Godric-W/Equus/internal/llm"
 )
 
-// Options configures the Chat Completions client.
+// Options configures the OpenAI-compatible client.
 type Options struct {
 	ProviderName string
 	APIKey       string
 	BaseURL      string
 	Model        string
 	Timeout      time.Duration
+	// WireAPI selects the dialect: "chat_completions" (default) or "responses".
+	WireAPI string
 }
+
+// responses reports whether the Responses API dialect is selected.
+func (options Options) responses() bool { return options.WireAPI == "responses" }
 
 // Client talks to an OpenAI-compatible Chat Completions endpoint.
 type Client struct {
@@ -70,6 +75,17 @@ func (client *Client) Capabilities() llm.Capabilities {
 }
 
 func (client *Client) Complete(ctx context.Context, request llm.Request) (llm.Response, error) {
+	if client.options.responses() {
+		body, err := client.newResponsesBody(request)
+		if err != nil {
+			return llm.Response{}, err
+		}
+		payload, err := client.do(ctx, body)
+		if err != nil {
+			return llm.Response{}, err
+		}
+		return decodeResponsesResponse(payload)
+	}
 	body, err := client.newRequestBody(request, false)
 	if err != nil {
 		return llm.Response{}, err
@@ -94,7 +110,7 @@ func (client *Client) Complete(ctx context.Context, request llm.Request) (llm.Re
 }
 
 func (client *Client) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	body, err := client.newRequestBody(request, true)
+	body, err := client.newRequestBytes(request)
 	if err != nil {
 		return nil, err
 	}
@@ -111,11 +127,47 @@ func (client *Client) Stream(ctx context.Context, request llm.Request) (llm.Stre
 		payload, _ := io.ReadAll(io.LimitReader(httpResponse.Body, maxResponseBytes))
 		return nil, providerError(httpResponse.StatusCode, payload)
 	}
+	if client.options.responses() {
+		return newResponsesStream(httpResponse.Body), nil
+	}
 	return newEventStream(httpResponse.Body), nil
 }
 
+// newRequestBytes builds the streaming body for the selected dialect.
+func (client *Client) newRequestBytes(request llm.Request) ([]byte, error) {
+	if client.options.responses() {
+		return client.newResponsesBodyStream(request)
+	}
+	return client.newRequestBody(request, true)
+}
+
+// do performs a blocking POST and returns the (already status-checked) body.
+func (client *Client) do(ctx context.Context, body []byte) ([]byte, error) {
+	httpRequest, err := client.newHTTPRequest(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	httpResponse, err := client.http.Do(httpRequest)
+	if err != nil {
+		return nil, fmt.Errorf("openai request: %w", err)
+	}
+	defer httpResponse.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(httpResponse.Body, maxResponseBytes))
+	if err != nil {
+		return nil, fmt.Errorf("openai read body: %w", err)
+	}
+	if httpResponse.StatusCode < 200 || httpResponse.StatusCode >= 300 {
+		return nil, providerError(httpResponse.StatusCode, payload)
+	}
+	return payload, nil
+}
+
 func (client *Client) newHTTPRequest(ctx context.Context, body []byte) (*http.Request, error) {
-	endpoint := strings.TrimRight(client.options.BaseURL, "/") + "/chat/completions"
+	path := "/chat/completions"
+	if client.options.responses() {
+		path = "/responses"
+	}
+	endpoint := strings.TrimRight(client.options.BaseURL, "/") + path
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

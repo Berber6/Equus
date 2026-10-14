@@ -10,6 +10,7 @@ import (
 	"github.com/Godric-W/Equus/internal/agent"
 	"github.com/Godric-W/Equus/internal/config"
 	"github.com/Godric-W/Equus/internal/llm"
+	"github.com/Godric-W/Equus/internal/llm/anthropic"
 	"github.com/Godric-W/Equus/internal/llm/openai"
 	"github.com/Godric-W/Equus/internal/threadstore"
 	"github.com/Godric-W/Equus/internal/tui"
@@ -138,6 +139,32 @@ func reopen(store *threadstore.Store, meta threadstore.Meta) (*threadstore.Write
 	return store.Create(meta)
 }
 
+// newModelClient builds the transport client selected by wire_api.
+func newModelClient(configured config.Config, provider config.ModelProviderInfo) (llm.Client, error) {
+	switch provider.WireAPI {
+	case config.WireAPIChatCompletions, config.WireAPIResponses, "":
+		return openai.NewClient(openai.Options{
+			ProviderName: configured.ModelProvider,
+			APIKey:       provider.APIKey,
+			BaseURL:      provider.BaseURL,
+			Model:        configured.Model,
+			Timeout:      provider.Timeout,
+			WireAPI:      string(provider.WireAPI),
+		})
+	case config.WireAPIAnthropicMessages:
+		return anthropic.NewClient(anthropic.Options{
+			ProviderName: configured.ModelProvider,
+			APIKey:       provider.APIKey,
+			BaseURL:      provider.BaseURL,
+			Model:        configured.Model,
+			Timeout:      provider.Timeout,
+			MaxTokens:    provider.MaxTokens,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported wire_api %q", provider.WireAPI)
+	}
+}
+
 // buildSession composes the model client and agent session from config,
 // returning the session plus the model name.
 func buildSession(configured config.Config, workingDir string) (*agent.Session, string, error) {
@@ -145,16 +172,7 @@ func buildSession(configured config.Config, workingDir string) (*agent.Session, 
 	if err != nil {
 		return nil, "", err
 	}
-	if provider.WireAPI != config.WireAPIChatCompletions {
-		return nil, "", fmt.Errorf("unsupported wire_api %q (only %q is implemented)", provider.WireAPI, config.WireAPIChatCompletions)
-	}
-	client, err := openai.NewClient(openai.Options{
-		ProviderName: configured.ModelProvider,
-		APIKey:       provider.APIKey,
-		BaseURL:      provider.BaseURL,
-		Model:        configured.Model,
-		Timeout:      provider.Timeout,
-	})
+	client, err := newModelClient(configured, provider)
 	if err != nil {
 		return nil, "", err
 	}

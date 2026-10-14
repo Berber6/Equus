@@ -27,6 +27,11 @@ func Validate(configured Config) error {
 		if strings.TrimSpace(provider.BaseURL) == "" {
 			problems = append(problems, fmt.Sprintf("provider %q base_url is empty", name))
 		}
+		switch provider.WireAPI {
+		case WireAPIChatCompletions, WireAPIResponses, WireAPIAnthropicMessages:
+		default:
+			problems = append(problems, fmt.Sprintf("provider %q wire_api %q is invalid", name, provider.WireAPI))
+		}
 	}
 	switch configured.Logging.Level {
 	case "", LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:

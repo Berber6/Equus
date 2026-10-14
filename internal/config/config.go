@@ -17,7 +17,9 @@ const (
 type WireAPI string
 
 const (
-	WireAPIChatCompletions WireAPI = "chat_completions"
+	WireAPIChatCompletions   WireAPI = "chat_completions"
+	WireAPIResponses         WireAPI = "responses"
+	WireAPIAnthropicMessages WireAPI = "anthropic_messages"
 )
 
 // Config is the effective Equus configuration.
@@ -41,6 +43,8 @@ type ModelProviderInfo struct {
 	APIKeyFile string        `yaml:"api_key_file"`
 	BaseURL    string        `yaml:"base_url"`
 	Timeout    time.Duration `yaml:"timeout"`
+	// MaxTokens is required by the Anthropic Messages API; ignored elsewhere.
+	MaxTokens int `yaml:"max_tokens"`
 }
 
 // LoggingConfig controls runtime logging behavior.
