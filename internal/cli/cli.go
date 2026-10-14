@@ -34,11 +34,12 @@ func newRootCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "equus",
 		Short:         "Equus - a minimal terminal coding agent",
-		Long:          "Equus is a minimal Go coding agent that talks to an OpenAI-compatible LLM endpoint and can read, list and write files via tools.",
+		Long:          "Equus is a minimal Go coding agent that talks to an OpenAI-compatible LLM endpoint and can read, list and write files via tools. Running `equus` with no subcommand starts the interactive TUI.",
+		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
-	root.AddCommand(newChatCommand(stdin, stdout, stderr))
+	configureChatFlags(root, stdin, stdout, stderr)
 	root.AddCommand(newExecCommand(stdout, stderr))
 	root.AddCommand(newSessionsCommand(stdout, stderr))
 	root.AddCommand(newVersionCommand(stdout))

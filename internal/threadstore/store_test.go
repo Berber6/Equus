@@ -113,3 +113,28 @@ func TestToolCallsRoundTrip(t *testing.T) {
 		t.Fatalf("tool call = %+v", items[0].ToolCalls[0])
 	}
 }
+
+func TestSetTitleAndDelete(t *testing.T) {
+	store := New(t.TempDir())
+	w, _ := store.Create(Meta{ID: "s1", Title: "chat"})
+	w.Close()
+
+	if err := store.SetTitle("s1", "my title"); err != nil {
+		t.Fatal(err)
+	}
+	meta, _, err := store.Load("s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Title != "my title" {
+		t.Fatalf("title = %q", meta.Title)
+	}
+
+	if err := store.Delete("s1"); err != nil {
+		t.Fatal(err)
+	}
+	metas, _ := store.List()
+	if len(metas) != 0 {
+		t.Fatalf("session not deleted: %v", metas)
+	}
+}

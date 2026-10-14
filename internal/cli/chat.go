@@ -19,28 +19,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newChatCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
+// resumePicker is the sentinel value of --resume when no id is given, meaning
+// "open the interactive session picker".
+const resumePicker = "\x00pick"
+
+// configureChatFlags makes the command itself the interactive chat entry point:
+// running `equus` with no subcommand starts the TUI.
+func configureChatFlags(command *cobra.Command, stdin io.Reader, stdout, stderr io.Writer) {
 	var (
 		continueLatest bool
 		resumeID       string
 		noSave         bool
 	)
-	command := &cobra.Command{
-		Use:   "chat",
-		Short: "Start an interactive TUI chat session with the model",
-		Args:  cobra.NoArgs,
-		RunE: func(command *cobra.Command, _ []string) error {
-			return runChat(command.Context(), chatOptions{
-				continueLatest: continueLatest,
-				resumeID:       resumeID,
-				noSave:         noSave,
-			}, stdin, stdout, stderr)
-		},
+	command.RunE = func(command *cobra.Command, _ []string) error {
+		resume := resumeID
+		if command.Flags().Changed("resume") && resumeID == "" {
+			resume = resumePicker
+		}
+		return runChat(command.Context(), chatOptions{
+			continueLatest: continueLatest,
+			resumeID:       resume,
+			noSave:         noSave,
+		}, stdin, stdout, stderr)
 	}
 	command.Flags().BoolVarP(&continueLatest, "continue", "c", false, "continue the most recent session")
-	command.Flags().StringVar(&resumeID, "resume", "", "resume a session by id")
+	command.Flags().StringVar(&resumeID, "resume", "", "resume a session by id; omit the id to pick interactively")
+	command.Flags().Lookup("resume").NoOptDefVal = resumePicker
 	command.Flags().BoolVar(&noSave, "no-save", false, "do not save this session")
-	return command
 }
 
 type chatOptions struct {
@@ -66,17 +71,36 @@ func runChat(ctx context.Context, options chatOptions, stdin io.Reader, stdout, 
 
 	store := threadstore.New(sessionsDir())
 	var history []llm.ResponseItem
-	writer, restored, err := openSession(store, options, workingDir, model)
-	if err != nil {
-		return err
-	}
-	if restored != nil {
-		history = restored.Items
-		session.Restore(history)
-	}
-	if writer != nil {
-		defer writer.Close()
-		session.SetRecorder(threadstore.Recorder{Writer: writer})
+	var pickerSessions []threadstore.Meta
+	var sessionID string
+
+	// The picker needs no writer until a session is chosen.
+	if options.resumeID == resumePicker {
+		metas, listErr := store.List()
+		if listErr != nil {
+			return listErr
+		}
+		pickerSessions = metas
+		if pickerSessions == nil {
+			pickerSessions = []threadstore.Meta{}
+		}
+	} else {
+		var writer *threadstore.Writer
+		var restored *restoredSession
+		writer, restored, err = openSession(store, options, workingDir, model)
+		if err != nil {
+			return err
+		}
+		if restored != nil {
+			history = restored.Items
+			sessionID = restored.Meta.ID
+			session.Restore(history)
+		}
+		if writer != nil {
+			defer writer.Close()
+			session.SetRecorder(threadstore.Recorder{Writer: writer})
+			sessionID = writer.ID()
+		}
 	}
 
 	return tui.Run(ctx, tui.RunOptions{
@@ -89,6 +113,14 @@ func runChat(ctx context.Context, options chatOptions, stdin io.Reader, stdout, 
 		CWD:             workingDir,
 		Markdown:        configured.Markdown.Enabled,
 		SyntaxHighlight: configured.Markdown.SyntaxHighlight,
+		Sessions:        pickerSessions,
+		SessionID:       sessionID,
+		LoadSession: func(id string) ([]llm.ResponseItem, error) {
+			_, items, loadErr := store.Load(id)
+			return items, loadErr
+		},
+		RenameFn: store.SetTitle,
+		DeleteFn: store.Delete,
 	})
 }
 

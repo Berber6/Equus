@@ -39,6 +39,33 @@ func New(dir string) *Store {
 // Dir reports the store's directory.
 func (s *Store) Dir() string { return s.dir }
 
+// SetTitle rewrites the last meta line with a new title (appending a fresh
+// meta record, which wins on load).
+func (s *Store) SetTitle(id, title string) error {
+	meta, err := s.readMeta(id)
+	if err != nil {
+		return err
+	}
+	meta.Title = strings.TrimSpace(title)
+	file, err := os.OpenFile(s.path(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	data, err := json.Marshal(record{Type: recordMeta, Meta: &meta})
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	_, err = file.Write(data)
+	return err
+}
+
+// Delete removes a session file.
+func (s *Store) Delete(id string) error {
+	return os.Remove(s.path(id))
+}
+
 // recordType tags each JSONL line.
 type recordType string
 
