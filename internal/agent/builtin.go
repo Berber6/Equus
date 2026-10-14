@@ -192,6 +192,7 @@ func NewDefaultRegistry(root string) (*toolRegistry, error) {
 		GlobTool{Root: root},
 		GrepTool{Root: root},
 		ShellTool{Root: root},
+		WebFetchTool{},
 	} {
 		if err := registry.register(tool); err != nil {
 			return nil, err

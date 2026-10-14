@@ -42,9 +42,10 @@ type LoggingPatch struct {
 }
 
 type ApprovalPatch struct {
-	Policy *string `yaml:"policy"`
-	Shell  *string `yaml:"shell"`
-	Write  *string `yaml:"write"`
+	Policy  *string `yaml:"policy"`
+	Shell   *string `yaml:"shell"`
+	Write   *string `yaml:"write"`
+	Network *string `yaml:"network"`
 }
 
 func (patch configPatch) apply(base Config) Config {
@@ -84,6 +85,9 @@ func (patch configPatch) apply(base Config) Config {
 		}
 		if patch.Approval.Write != nil {
 			base.Approval.Write = ApprovalMode(*patch.Approval.Write)
+		}
+		if patch.Approval.Network != nil {
+			base.Approval.Network = ApprovalMode(*patch.Approval.Network)
 		}
 	}
 	if patch.Compaction != nil {

@@ -46,9 +46,10 @@ type Approver func(ctx context.Context, request ApprovalRequest) (ApprovalDecisi
 type approvalKind string
 
 const (
-	approvalKindNone  approvalKind = ""
-	approvalKindShell approvalKind = "shell"
-	approvalKindWrite approvalKind = "write"
+	approvalKindNone    approvalKind = ""
+	approvalKindShell   approvalKind = "shell"
+	approvalKindWrite   approvalKind = "write"
+	approvalKindNetwork approvalKind = "network"
 )
 
 // approvalRequestor is implemented by tools that may need user approval. The

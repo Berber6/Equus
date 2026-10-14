@@ -30,9 +30,10 @@ const (
 
 // ApprovalConfig controls which operations require confirmation.
 type ApprovalConfig struct {
-	Policy ApprovalPolicy `yaml:"policy"`
-	Shell  ApprovalMode   `yaml:"shell"`
-	Write  ApprovalMode   `yaml:"write"`
+	Policy  ApprovalPolicy `yaml:"policy"`
+	Shell   ApprovalMode   `yaml:"shell"`
+	Write   ApprovalMode   `yaml:"write"`
+	Network ApprovalMode   `yaml:"network"`
 	// ShellAllowPrefixes lists command prefixes that run without prompting.
 	ShellAllowPrefixes []string `yaml:"shell_allow_prefixes"`
 }
@@ -68,6 +69,10 @@ func (approval ApprovalConfig) EffectiveMode(category string) ApprovalMode {
 		if approval.Write != "" {
 			return approval.Write
 		}
+	case "network":
+		if approval.Network != "" {
+			return approval.Network
+		}
 	}
 	switch approval.Policy {
 	case ApprovalPolicyNever:
@@ -83,9 +88,10 @@ func (approval ApprovalConfig) EffectiveMode(category string) ApprovalMode {
 // allow file writes, and auto-allow a conservative set of read-only commands.
 func defaultApproval() ApprovalConfig {
 	return ApprovalConfig{
-		Policy: ApprovalPolicyOnRequest,
-		Shell:  ApprovalModeAsk,
-		Write:  ApprovalModeAllow,
+		Policy:  ApprovalPolicyOnRequest,
+		Shell:   ApprovalModeAsk,
+		Write:   ApprovalModeAllow,
+		Network: ApprovalModeAsk,
 		ShellAllowPrefixes: []string{
 			"ls", "cat", "pwd", "echo", "git status", "git diff", "go build", "go test",
 		},
