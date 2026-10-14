@@ -21,7 +21,13 @@ type configPatch struct {
 	Logging          *LoggingPatch                `yaml:"logging"`
 	Approval         *ApprovalPatch               `yaml:"approval"`
 	Compaction       *CompactionPatch             `yaml:"compaction"`
+	Markdown         *MarkdownPatch               `yaml:"markdown"`
 	BaseInstructions *string                      `yaml:"base_instructions"`
+}
+
+type MarkdownPatch struct {
+	Enabled         *bool `yaml:"enabled"`
+	SyntaxHighlight *bool `yaml:"syntax_highlight"`
 }
 
 type CompactionPatch struct {
@@ -89,6 +95,14 @@ func (patch configPatch) apply(base Config) Config {
 		}
 		if patch.Compaction.KeepRecentTurns != nil {
 			base.Compaction.KeepRecentTurns = *patch.Compaction.KeepRecentTurns
+		}
+	}
+	if patch.Markdown != nil {
+		if patch.Markdown.Enabled != nil {
+			base.Markdown.Enabled = *patch.Markdown.Enabled
+		}
+		if patch.Markdown.SyntaxHighlight != nil {
+			base.Markdown.SyntaxHighlight = *patch.Markdown.SyntaxHighlight
 		}
 	}
 	if patch.BaseInstructions != nil {

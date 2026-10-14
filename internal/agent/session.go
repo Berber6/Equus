@@ -30,6 +30,13 @@ type Options struct {
 	// ApprovalMode resolves the policy for a category ("shell", "write"):
 	// ApprovalModeAsk / Allow / Deny.
 	ApprovalMode func(category string) ApprovalMode
+	// AutoApprove, when set, reports whether a specific operation (by category
+	// and its summary) should skip the prompt — e.g. a shell command matching
+	// an allowed prefix.
+	AutoApprove func(category, summary string) bool
+	// OnPermanentGrant, when set, is called when the user grants persistent
+	// approval for an operation (so it can be recorded).
+	OnPermanentGrant func(category, summary string) error
 	// Recorder, when set, is notified of every conversation item appended to
 	// history (for persisting the session).
 	Recorder Recorder
@@ -110,6 +117,8 @@ func NewSession(client llm.Client, options Options) (*Session, error) {
 			MaxRoundTrips:    roundTrips,
 			Approver:         options.Approver,
 			ApprovalMode:     options.ApprovalMode,
+			AutoApprove:      options.AutoApprove,
+			OnPermanentGrant: options.OnPermanentGrant,
 			Recorder:         options.Recorder,
 			Compaction:       compaction,
 		},
@@ -152,6 +161,55 @@ func (session *Session) Restore(items []llm.ResponseItem) {
 	cloned := make([]llm.ResponseItem, len(items))
 	copy(cloned, items)
 	session.history = cloned
+}
+
+// Clear drops the in-memory conversation history (the persisted session file,
+// if any, is untouched).
+func (session *Session) Clear() {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.history = nil
+	session.lastPromptTokens = 0
+}
+
+// Compact forces a compaction of the current history, ignoring the threshold.
+// It reports whether history was compacted.
+func (session *Session) Compact(ctx context.Context, sink func(Event)) bool {
+	session.mu.Lock()
+	keep := session.compaction.KeepRecentTurns
+	if keep <= 0 {
+		keep = 4
+	}
+	history := append([]llm.ResponseItem(nil), session.history...)
+	session.mu.Unlock()
+
+	old, recent := splitHistory(history, keep)
+	if len(old) == 0 {
+		return false
+	}
+	summary, err := session.summarize(ctx, old)
+	if err != nil {
+		if sink != nil {
+			sink(Event{Kind: EventError, Text: "compaction failed: " + err.Error()})
+		}
+		return false
+	}
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return false
+	}
+	compacted := make([]llm.ResponseItem, 0, len(recent)+1)
+	compacted = append(compacted, llm.SystemMessage("Summary of the earlier conversation:\n"+summary))
+	compacted = append(compacted, recent...)
+
+	session.mu.Lock()
+	session.history = compacted
+	session.lastPromptTokens = 0
+	session.mu.Unlock()
+	if sink != nil {
+		sink(Event{Kind: EventCompaction, Text: fmt.Sprintf("compacted %d earlier messages", len(old))})
+	}
+	return true
 }
 
 // recordUsage stores the most recent request's prompt size for compaction.
@@ -390,7 +448,10 @@ func (session *Session) checkApproval(ctx context.Context, tool Tool, call llm.T
 	case ApprovalModeDeny:
 		return "error: " + string(category) + " is denied by policy", true
 	}
-	// Ask: session grants short-circuit the prompt.
+	// Ask: an allowed prefix (or a session grant) short-circuits the prompt.
+	if session.options.AutoApprove != nil && session.options.AutoApprove(string(category), summary) {
+		return "", false
+	}
 	if session.sessionApproved(category) {
 		return "", false
 	}
@@ -415,6 +476,13 @@ func (session *Session) checkApproval(ctx context.Context, tool Tool, call llm.T
 		return "", false
 	case ApprovalSession:
 		session.markSessionApproved(category)
+		return "", false
+	case ApprovalPermanent:
+		if session.options.OnPermanentGrant != nil {
+			if err := session.options.OnPermanentGrant(string(category), summary); err != nil {
+				return "error: could not record permanent approval: " + err.Error(), true
+			}
+		}
 		return "", false
 	default:
 		return "error: the user denied this operation", true

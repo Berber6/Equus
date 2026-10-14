@@ -208,3 +208,23 @@ func TestApprovalDefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("policy never should allow write, got %q", loaded.Approval.EffectiveMode("write"))
 	}
 }
+
+func TestShellAllowPrefixMatching(t *testing.T) {
+	approval := ApprovalConfig{ShellAllowPrefixes: []string{"git status", "go test"}}
+	cases := []struct {
+		command string
+		want    bool
+	}{
+		{"git status", true},
+		{"git status --short", true},
+		{"git statusx", false},
+		{"git diff", false},
+		{"go test ./...", true},
+		{"  go test  ", true},
+	}
+	for _, tc := range cases {
+		if got := approval.AllowsShellPrefix(tc.command); got != tc.want {
+			t.Errorf("AllowsShellPrefix(%q) = %v, want %v", tc.command, got, tc.want)
+		}
+	}
+}

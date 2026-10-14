@@ -30,6 +30,7 @@ type Config struct {
 	Logging        LoggingConfig                `yaml:"logging"`
 	Approval       ApprovalConfig               `yaml:"approval"`
 	Compaction     CompactionConfig             `yaml:"compaction"`
+	Markdown       MarkdownConfig               `yaml:"markdown"`
 	// BaseInstructions overrides the built-in system prompt when non-empty.
 	BaseInstructions string `yaml:"base_instructions"`
 }
@@ -61,6 +62,7 @@ func Default() Config {
 		Logging:        LoggingConfig{Level: LogLevelInfo},
 		Approval:       defaultApproval(),
 		Compaction:     defaultCompaction(),
+		Markdown:       defaultMarkdown(),
 	}
 }
 

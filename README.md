@@ -10,7 +10,7 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 
 - **Rust**：性能和内存安全无可挑剔，但所有权、生命周期这套编译期约束学习成本高，改一处代码常常要连锁改十处，不适合快速迭代一个还在成长中的框架。
 - **TypeScript**：生态最丰富、上手最快，但产物依赖 Node 运行时，发给别人不是「一个文件」；调试 agent 主循环时层层异步回调的调用栈也不够直观。
-- **Go**：`go build` 直接产出一个静态链接的单文件二进制，拷到任意 Linux 机器就能跑；并发就是一个 `go` 关键字；标准库自带 HTTP/JSON，核心依赖精简（LLM 域仅 cobra + yaml，TUI 引入 charmbracelet 系列）；类型系统「够用就好」，代码读起来接近直白的英文，重构很快。
+- **Go**：`go build` 直接产出静态链接的单文件二进制，**无需 CGO 即可交叉编译到 Linux/macOS/Windows**；并发就是一个 `go` 关键字；标准库自带 HTTP/JSON，核心依赖精简（LLM 域仅 cobra + yaml，TUI 引入 charmbracelet 系列）；类型系统「够用就好」，代码读起来接近直白的英文，重构很快。
 
 一句话：在「够快的性能」和「够快的开发速度」之间取中庸，Go 最省心。
 
@@ -25,12 +25,15 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
   - `glob` —— 按 glob 模式查找文件（`**` 递归）；
   - `grep` —— 按正则搜索文件内容，返回 `path:line: text`；
   - `shell` —— 在工作目录执行 shell 命令（默认需审批）。
-- **审批策略**：高危操作（默认 `shell`）按配置决定是询问 / 放行 / 拒绝；交互模式弹窗确认（`[y]` 一次 / `[a]` 本会话 / `[n]` 拒绝），非交互模式默认拒绝。
+- **审批策略**：高危操作（默认 `shell`）按配置决定询问 / 放行 / 拒绝。`shell_allow_prefixes` 命令前缀白名单自动放行（默认含 `ls`/`cat`/`git status` 等只读命令）。交互模式弹窗确认（`[y]` 一次 / `[a]` 本会话 / `[p]` 永久 / `[n]` 拒绝），`[p]` 写入 `~/.equus/approvals.yaml`；非交互 `exec` 默认拒绝，`--allow-shell` 放行。
 - **自动压缩（compaction）**：上下文接近窗口上限（默认 80%）时，自动把较早历史摘要成一段、保留最近若干轮原文；状态行显示 `ctx N%`。
 - **系统提示词**：自动注入工作目录、平台与工具使用引导；若项目内含 `AGENTS.md`（项目根到工作目录逐层），其内容会一并注入并声明优先。可在配置中用 `base_instructions` 完全覆盖。
 - YAML 配置 + 环境变量覆盖（`${VAR}` 展开与 `EQUUS_*` 变量）。
 - API Key 支持三种注入方式：配置文件内联 / 密钥文件（`api_key_file`）/ 环境变量。
-- 交互式 TUI（Bubble Tea）：全屏对话、行编辑输入框、历史召回、滚动 transcript、实时状态。
+- 交互式 TUI（Bubble Tea）：全屏对话、行编辑输入框、历史召回、滚动 transcript、实时状态、启动字标。
+- 助手输出支持 **Markdown 渲染**（标题/列表/引用/表格/行内样式），代码块用 chroma 语法高亮。
+- **Slash 命令**：`/help`、`/clear`、`/compact`、`/model`、`/status`、`/resume`、`/rename`、`/delete`、`/quit`（`/exit` 同义）。
+- **会话选择器**：`equus --resume`（不带 id）交互式挑选并恢复历史会话；`/rename`、`/delete` 管理当前会话。
 
 ## 设计来源
 
@@ -83,6 +86,21 @@ make build    # 产物: bin/equus
 make check    # fmt + vet + test + build
 ```
 
+### 跨平台
+
+Equus 是**纯 Go 实现，不依赖 CGO 与任何平台专属系统调用**，因此可直接交叉编译到三大平台：
+
+```bash
+GOOS=linux   GOARCH=amd64 go build -o equus-linux    ./cmd/equus
+GOOS=darwin  GOARCH=arm64 go build -o equus-darwin   ./cmd/equus
+GOOS=windows GOARCH=amd64 go build -o equus.exe      ./cmd/equus
+```
+
+配置、LLM 客户端（三种 wire）、Agent 循环、文件工具、TUI、会话持久化等**核心能力均跨平台可用**。
+
+> **唯一的平台例外**：`shell` 工具目前调用 `/bin/bash -lc`，仅适用于 Linux/macOS；Windows 需另行适配（改用 `cmd`/`powershell`）。除此之外无平台专属代码。
+>
+> Equus **不做进程沙箱**（seccomp / landlock / 容器等）——那会引入平台专属内核能力、破坏这里的一致性。安全靠「审批 + 工作目录约束」，属有意的取舍。
 ### 配置
 
 首次运行会在 `~/.equus/`（或 `$EQUUS_HOME`）生成初始配置。也可以手动放置：
@@ -147,12 +165,15 @@ export EQUUS_MODEL="GLM-5.3"
 ### 使用
 
 ```bash
-# 交互式 TUI 对话（需要真实终端）
-equus chat
+# 交互式 TUI 对话（直接运行，需要真实终端）
+equus
+
+# 交互式选择器：挑选历史会话恢复（类似新建则不带 --resume）
+equus --resume
 
 # 继续最近一次会话 / 按 id 恢复
-equus chat --continue
-equus chat --resume <session-id>
+equus --continue
+equus --resume <session-id>
 
 # 列出已保存的会话
 equus sessions
@@ -165,23 +186,24 @@ equus config check
 equus config show
 ```
 
-会话以 append-only JSONL 保存在 `~/.equus/sessions/`（可用 `EQUUS_HOME` 覆盖）。`equus chat` 默认保存（`--no-save` 关闭）；`exec` 不保存。
+会话以 append-only JSONL 保存在 `~/.equus/sessions/`（可用 `EQUUS_HOME` 覆盖）。**直接运行 `equus`** 即启动交互 TUI 并默认保存会话（`--no-save` 关闭）；`exec` 不保存。
 
-`chat` 是一个 Bubble Tea **全屏 TUI**（alternate screen）：上方是自绘的对话区（含工具调用），下方是输入框面板与状态行。输入框支持完整行编辑（退格、左右移动、`↑`/`↓` 在多行内移动光标，到首/末行才召回历史）。`PgUp`/`PgDn` 与滚轮可滚动对话区。
+`equus` 是一个 Bubble Tea **全屏 TUI**（alternate screen）：上方是自绘的对话区（含工具调用），下方是输入框面板与状态行。输入框支持完整行编辑（退格、左右移动、`↑`/`↓` 在多行内移动光标，到首/末行才召回历史）。`PgUp`/`PgDn` 与滚轮可滚动对话区。
 
+- **命令补全**：输入 `/` 弹出命令列表，`↑/↓` 选择、`Tab` 补全。
 - **换行**：`Ctrl+J`（所有终端可用）或 `Alt+Enter`；`Enter` 提交。
 - **退出**：`Ctrl-D`（输入为空时）或 `Ctrl-C`（空闲时）；运行中 `Esc`/`Ctrl-C` 打断当前回合。
 
 > 全屏（alternate screen）模式下，退出后本次对话**不保留**在终端 scrollback 中（与 Claude Code 一致）；这是 Bubble Tea 下可靠支持多行输入的必要取舍。
 
-> `chat` 需要 stdin 为交互式终端；在管道/重定向环境（如 `echo ... | equus chat`）下会报错并退出——非交互场景请用 `equus exec`。
+> 交互模式需要 stdin 为终端；在管道/重定向环境（如 `echo ... | equus`）下会报错并退出——非交互场景请用 `equus exec`。
 
 ## 已验证
 
 - `make check`（fmt/vet/test/build）全绿。
 - 真实端点（`https://llmapi.isrc.ac.cn/v1`，GLM-5.3 / DeepSeek-V4-Flash）：
   - `equus exec` 单轮问答 ✅
-  - `equus chat`（TUI）多轮记忆（"我叫小明" → "我叫什么名字？"）✅
-  - `equus chat`（TUI）流式对话：输入、退格删除、`Ctrl-D` 退出均正常 ✅
+  - `equus`（TUI）多轮记忆（"我叫小明" → "我叫什么名字？"）✅
+  - `equus`（TUI）流式对话：输入、退格删除、`Ctrl-D` 退出均正常 ✅
   - 工具往返：读取 `note.txt` → 写入 `answer.txt` ✅
   - 流式 reasoning / 内容 / token 用量输出 ✅
