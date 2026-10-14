@@ -19,7 +19,11 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 - 与任意 OpenAI Chat Completions 兼容端点对话（OpenAI、GLM、DeepSeek、Qwen 等）。
 - SSE 流式输出，实时显示思考过程（reasoning）、工具调用与 token 用量。
 - 多轮对话记忆。
-- 内置文件工具：`read_file`、`write_file`、`list_files`（限制在工作目录内）。
+- 内置文件工具（限制在工作目录内）：
+  - `read_file` / `write_file` / `list_files` —— 读写与列目录；
+  - `apply_patch` —— 以补丁文本（`*** Begin Patch` … `*** End Patch`）新增 / 删除 / 更新 / 移动文件，支持多块编辑与模糊上下文定位；
+  - `glob` —— 按 glob 模式查找文件（`**` 递归）；
+  - `grep` —— 按正则搜索文件内容，返回 `path:line: text`。
 - YAML 配置 + 环境变量覆盖（`${VAR}` 展开与 `EQUUS_*` 变量）。
 - API Key 支持三种注入方式：配置文件内联 / 密钥文件（`api_key_file`）/ 环境变量。
 - 交互式 TUI（Bubble Tea）：全屏对话、行编辑输入框、历史召回、滚动 transcript、实时状态。
@@ -37,7 +41,8 @@ Codex 用 Rust 写，Claude Code 用 TypeScript 写，Equus 选择 Go，理由�
 ### 参照了 Claude Code
 
 - **工具契约**：每个工具自带名称、自然语言描述和 JSON Schema 参数定义，由模型自主决定何时调用。
-- **文件工具集与安全默认值**：`read_file` / `write_file` / `list_files` 三个文件工具，所有路径限制在工作目录内（`resolvePath` 逃逸防护）——Claude Code 权限与沙箱思路的极简版。
+- **文件工具集与安全默认值**：`read_file` / `write_file` / `list_files` / `apply_patch` / `glob` / `grep` 六个文件工具，所有路径限制在工作目录内（`resolvePath` 逃逸防护）——Claude Code 权限与沙箱思路的极简版。
+- **apply_patch 补丁格式**：`apply_patch` 采用一段文本补丁（Begin/End 包裹的 Add/Delete/Update/Move hunk），update hunk 用 `@@` 上下文锚点 + ` `/`-`/`+` 行前缀定位改动，支持多块编辑与逐级放宽的模糊匹配。
 
 ### 终端界面
 
@@ -57,6 +62,7 @@ Equus/
 │   ├── cli/                 # Cobra 命令：chat / exec / config / version
 │   ├── config/              # YAML 加载、env 展开、校验、脱敏
 │   ├── agent/               # Agent 循环与内置工具
+│   │   └── patch/           # apply_patch 补丁解析与应用
 │   ├── tui/                 # Bubble Tea 全屏交互界面
 │   └── llm/                 # Provider 中立模型域
 │       └── openai/          # Chat Completions 适配器（非流式 + SSE 流式）

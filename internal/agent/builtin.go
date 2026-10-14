@@ -174,6 +174,9 @@ func NewDefaultRegistry(root string) (*toolRegistry, error) {
 		ReadFileTool{Root: root},
 		WriteFileTool{Root: root},
 		ListFilesTool{Root: root},
+		ApplyPatchTool{Root: root},
+		GlobTool{Root: root},
+		GrepTool{Root: root},
 	} {
 		if err := registry.register(tool); err != nil {
 			return nil, err
