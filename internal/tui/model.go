@@ -166,6 +166,10 @@ func NewModel(ctx context.Context, options Options) (Model, error) {
 	input.SetHeight(1)
 	input.Focus()
 	_ = input.Cursor.SetMode(cursor.CursorStatic)
+	// Give the cursor an explicit, high-contrast block. The default is a plain
+	// reverse-video cell, which is invisible on our background-filled input box.
+	input.Cursor.Style = p.cursorBlock()
+	input.Cursor.TextStyle = bg
 
 	return Model{
 		ctx:             ctx,

@@ -84,7 +84,7 @@ func (m Model) View() string {
 func (m Model) transcriptLen() int {
 	length := len(m.transcript)
 	if active := strings.TrimSpace(m.active); active != "" {
-		length += len(m.assistantEntry(m.active))
+		length += len(m.streamingTailEntry(m.active))
 	}
 	return length
 }
@@ -103,7 +103,7 @@ func (m Model) scrollbarCell(thumb bool) string {
 func (m Model) transcriptWindow(rows int) []string {
 	all := append([]string{}, m.transcript...)
 	if active := strings.TrimSpace(m.active); active != "" {
-		all = append(all, m.assistantEntry(m.active)...)
+		all = append(all, m.streamingTailEntry(m.active)...)
 	}
 	if rows <= 0 {
 		return nil
@@ -155,18 +155,27 @@ func (m Model) composerView() []string {
 }
 
 // backgroundRow pads one physical line to just under the terminal width and
-// paints the whole row with the input background. The content is stripped of
-// its own SGR resets first so the fill covers the entire row (including the
-// placeholder state and trailing columns).
+// paints the whole row with the input background. The content's own SGR is
+// preserved (so the cursor block and any styling survive); the trailing space
+// needed to fill the row is appended as separately-styled background so the
+// run of blanks also carries the fill.
 func (m Model) backgroundRow(content string) string {
-	plain := strings.TrimRight(xansi.Strip(content), " ")
 	target := maxInt(1, m.width-1)
-	if pad := target - xansi.StringWidth(plain); pad > 0 {
-		plain += strings.Repeat(" ", pad)
-	} else {
-		plain = xansi.Truncate(plain, target, "")
+	// Truncate over-long content (display width aware).
+	width := xansi.StringWidth(content)
+	if width > target {
+		content = xansi.Truncate(content, target, "")
+		width = xansi.StringWidth(content)
 	}
-	return m.palette.inputBackground().Render(plain)
+	if width >= target {
+		return content
+	}
+	fill := m.palette.inputBackground().Render(strings.Repeat(" ", target-width))
+	// If the row is otherwise empty, a single styled fill is enough.
+	if strings.TrimSpace(xansi.Strip(content)) == "" {
+		return fill
+	}
+	return content + fill
 }
 
 // backgroundFill is a full-width blank row in the input background color.

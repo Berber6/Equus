@@ -195,6 +195,17 @@ func (p palette) inputBackground() lipgloss.Style {
 	}
 }
 
+// cursorBlock styles the input cursor as a solid, high-contrast block.
+func (p palette) cursorBlock() lipgloss.Style {
+	if !p.rich() {
+		return p.plain().Reverse(true)
+	}
+	if p.dark {
+		return p.plain().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("0"))
+	}
+	return p.plain().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("15"))
+}
+
 // separator / border derive faint rules from the background/foreground mix.
 func (p palette) separator() lipgloss.Style {
 	if p.level == colorLevelTrueColor || p.level == colorLevelANSI256 {

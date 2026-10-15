@@ -189,6 +189,15 @@ func fitColumnWidths(natural []int, columns, budget int) []int {
 	return widths
 }
 
+// firstRune returns the first rune of s as a string (used to guarantee
+// progress when breaking an over-wide word).
+func firstRune(s string) string {
+	for _, r := range s {
+		return string(r)
+	}
+	return s
+}
+
 // wrapText wraps plain text to at most width display columns on word
 // boundaries, breaking over-long words.
 func wrapText(text string, width int) []string {
@@ -206,8 +215,13 @@ func wrapText(text string, width int) []string {
 	current := ""
 	for _, word := range words {
 		for xansi.StringWidth(word) > width {
-			// Break a too-long word.
+			// Break a too-long word. Truncate may return the whole word (e.g. a
+			// single double-width rune wider than width), which would leave it
+			// unchanged and loop forever; take a single rune then.
 			head := xansi.Truncate(word, width, "")
+			if head == "" || head == word || !strings.HasPrefix(word, head) {
+				head = firstRune(word)
+			}
 			if current != "" {
 				lines = append(lines, current)
 				current = ""

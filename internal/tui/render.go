@@ -50,6 +50,24 @@ func (m Model) assistantEntry(text string) []string {
 	return out
 }
 
+// streamingTailEntry renders the in-flight assistant buffer cheaply: plain
+// text with the "• " marker, no markdown parsing and no syntax highlighting.
+// The full markdown render happens once, when the turn commits (assistantEntry).
+// Re-parsing the whole partial buffer on every streamed delta is O(n^2) and, with
+// chroma tokenizing an unterminated code fence each time, freezes the UI.
+func (m Model) streamingTailEntry(text string) []string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	out := make([]string, 0, len(lines))
+	for index, line := range lines {
+		prefix := "  "
+		if index == 0 {
+			prefix = m.palette.dim().Render("• ")
+		}
+		out = append(out, m.wrapLines(prefix+line)...)
+	}
+	return out
+}
+
 // toolCallEntry renders a tool invocation: "• Ran <name> <detail>".
 func (m Model) toolCallEntry(name, detail string) []string {
 	head := m.palette.dim().Render("• ") + m.palette.strong().Render("Ran ") + m.palette.tool().Render(name)

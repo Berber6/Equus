@@ -7,18 +7,17 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 )
 
-// The startup wordmark, drawn as terminal-safe Braille glyphs. Wide is used on
-// roomy terminals; compact is the fallback.
+// The startup wordmark, drawn as terminal-safe ASCII block letters. Wide is
+// used on roomy terminals; compact is the fallback for narrow ones.
 const wideLogoArt = `
-⠑⠢⡀ ⠄ ⢀⣀⡀⢀⣀⡀ ⠄ ⠄ ⢀⣀⡀ ⠢⠢⡀
-⠆ ⠇ ⠇ ⠇   ⠇ ⠇ ⠇ ⠇ ⠇   ⠆⠂⠲
-⠇ ⠇ ⠇ ⠇   ⠇ ⠇⠄⠇ ⠇   ⠇⠙⠆
-⠘⠤⠂ ⠇ ⠘⠤⠂⠤⠤⠂⠤⠂⠘⠤⠂ ⠇ ⠙⠤⠂⢠`
+█▀▀ █▀▀█ █  █ █  █ █▀▀
+█▀▀ █▄▄▀ █  █ █  █ ▀▀█
+▀▀▀ ▀ ▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀`
 
 const compactLogoArt = `
-⠑⠢⡀ ⢀⣀⡀ ⠄ ⠄ ⢀⣀⡀ ⠢⠢⡀
-⠆ ⠇ ⠇   ⠇ ⠇ ⠇ ⠇ ⠇   ⠆⠂⠲
-⠘⠤⠂ ⠘⠤⠂ ⠤⠂⠘⠤ ⠇ ⠙⠤⠂⢠`
+█▀▀ █▀▀█ █  █ █  █ █▀▀
+█▀▀ █▄▄▀ █  █ █  █ ▀▀█
+▀▀▀ ▀ ▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀`
 
 const (
 	wideLogoGap    = 6
